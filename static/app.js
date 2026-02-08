@@ -133,8 +133,11 @@
         addCell(tr, entry, "ado_pr", entry.ado_pr || "", "text");
         // Account
         var acctLabel = entry.account_number || "";
-        if (entry.account_number && entry.account_description) {
-            acctLabel = entry.account_number + " - " + entry.account_description;
+        if (entry.account_number) {
+            var parts = [entry.account_number];
+            if (entry.account_project) parts.push(entry.account_project);
+            if (entry.account_description) parts.push(entry.account_description);
+            acctLabel = parts.join(" - ");
         }
         addCell(tr, entry, "imputation_account_id", acctLabel, "account-select");
         // Imputation duration
@@ -217,7 +220,10 @@
             for (var j = 0; j < accounts.length; j++) {
                 var opt2 = document.createElement("option");
                 opt2.value = accounts[j].id;
-                opt2.textContent = accounts[j].number + " - " + accounts[j].description;
+                var lbl = [accounts[j].number];
+                if (accounts[j].project) lbl.push(accounts[j].project);
+                if (accounts[j].description) lbl.push(accounts[j].description);
+                opt2.textContent = lbl.join(" - ");
                 input.appendChild(opt2);
             }
             input.value = entry.imputation_account_id != null ? String(entry.imputation_account_id) : "";
@@ -387,6 +393,21 @@
         inpDesc.onkeydown = function (ev) { if (ev.key === "Enter") inpDesc.blur(); };
         tdDesc.appendChild(inpDesc);
         tr.appendChild(tdDesc);
+
+        // Project
+        var tdProj = document.createElement("td");
+        var inpProj = document.createElement("input");
+        inpProj.value = acct.project || "";
+        inpProj.onblur = function () {
+            if (inpProj.value !== (acct.project || "")) {
+                api("POST", "/api/accounts/" + acct.id, { project: inpProj.value }).then(function () {
+                    loadAccounts();
+                });
+            }
+        };
+        inpProj.onkeydown = function (ev) { if (ev.key === "Enter") inpProj.blur(); };
+        tdProj.appendChild(inpProj);
+        tr.appendChild(tdProj);
 
         // Delete
         var tdAct = document.createElement("td");

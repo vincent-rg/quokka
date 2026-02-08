@@ -16,6 +16,7 @@ def init_db(db_path):
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             number TEXT NOT NULL UNIQUE,
             description TEXT NOT NULL DEFAULT '',
+            project TEXT NOT NULL DEFAULT '',
             active INTEGER NOT NULL DEFAULT 1
         );
 
@@ -34,6 +35,10 @@ def init_db(db_path):
 
         CREATE INDEX IF NOT EXISTS idx_entries_date ON entries(date);
     """)
+    # Migration: add project column if missing
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(imputation_accounts)").fetchall()]
+    if "project" not in cols:
+        conn.execute("ALTER TABLE imputation_accounts ADD COLUMN project TEXT NOT NULL DEFAULT ''")
     conn.commit()
     conn.close()
 
@@ -54,11 +59,11 @@ def list_accounts(db_path, include_inactive=False):
     return [dict(r) for r in rows]
 
 
-def create_account(db_path, number, description=""):
+def create_account(db_path, number, description="", project=""):
     conn = get_connection(db_path)
     cur = conn.execute(
-        "INSERT INTO imputation_accounts (number, description) VALUES (?, ?)",
-        (number, description),
+        "INSERT INTO imputation_accounts (number, description, project) VALUES (?, ?, ?)",
+        (number, description, project),
     )
     account_id = cur.lastrowid
     conn.commit()
@@ -71,7 +76,7 @@ def create_account(db_path, number, description=""):
 
 def update_account(db_path, account_id, **fields):
     conn = get_connection(db_path)
-    allowed = {"number", "description", "active"}
+    allowed = {"number", "description", "project", "active"}
     updates = {k: v for k, v in fields.items() if k in allowed}
     if not updates:
         conn.close()
@@ -104,19 +109,19 @@ def list_entries(db_path, date_from=None, date_to=None):
     conn = get_connection(db_path)
     if date_from and date_to:
         rows = conn.execute(
-            """SELECT e.*, a.number AS account_number, a.description AS account_description
+            """SELECT e.*, a.number AS account_number, a.description AS account_description, a.project AS account_project
                FROM entries e
                LEFT JOIN imputation_accounts a ON e.imputation_account_id = a.id
                WHERE e.date >= ? AND e.date <= ?
-               ORDER BY e.date, e.id""",
+               ORDER BY e.date DESC, e.id""",
             (date_from, date_to),
         ).fetchall()
     else:
         rows = conn.execute(
-            """SELECT e.*, a.number AS account_number, a.description AS account_description
+            """SELECT e.*, a.number AS account_number, a.description AS account_description, a.project AS account_project
                FROM entries e
                LEFT JOIN imputation_accounts a ON e.imputation_account_id = a.id
-               ORDER BY e.date, e.id"""
+               ORDER BY e.date DESC, e.id"""
         ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
@@ -143,7 +148,7 @@ def create_entry(db_path, data):
     entry_id = cur.lastrowid
     conn.commit()
     row = conn.execute(
-        """SELECT e.*, a.number AS account_number, a.description AS account_description
+        """SELECT e.*, a.number AS account_number, a.description AS account_description, a.project AS account_project
            FROM entries e
            LEFT JOIN imputation_accounts a ON e.imputation_account_id = a.id
            WHERE e.id = ?""",
@@ -168,7 +173,7 @@ def update_entry(db_path, entry_id, data):
     conn.execute(f"UPDATE entries SET {set_clause} WHERE id = ?", values)
     conn.commit()
     row = conn.execute(
-        """SELECT e.*, a.number AS account_number, a.description AS account_description
+        """SELECT e.*, a.number AS account_number, a.description AS account_description, a.project AS account_project
            FROM entries e
            LEFT JOIN imputation_accounts a ON e.imputation_account_id = a.id
            WHERE e.id = ?""",

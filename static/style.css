@@ -174,7 +174,7 @@ td select { padding: 1px 2px; }
     background: var(--surface);
     border-radius: 6px;
     padding: 16px;
-    width: 500px;
+    width: 600px;
     max-height: 80vh;
     overflow-y: auto;
 }

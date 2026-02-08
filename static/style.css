@@ -84,14 +84,18 @@ main { padding: 0 12px 40px; }
     text-align: left;
     padding: 3px 6px;
     border-bottom: 1px solid var(--border);
+    border-right: 1px solid var(--border);
     color: var(--muted);
 }
+.day-group th:last-child { border-right: none; }
 .day-group td {
     padding: 2px 4px;
     border-bottom: 1px solid var(--border);
+    border-right: 1px solid var(--border);
     vertical-align: middle;
     height: 28px;
 }
+.day-group td:last-child { border-right: none; }
 .day-group tr:last-child td { border-bottom: none; }
 .day-group tr:hover td { background: var(--accent-light); }
 .day-group tr.dragging { opacity: 0.4; }

@@ -5,6 +5,7 @@
     var entries = [];
     var accounts = [];
     var DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    var COL_COUNT = 8; // number of columns in entry tables
 
     // --- Helpers ---
     function fmtDate(d) {
@@ -39,6 +40,13 @@
         return opts;
     }
 
+    function acctLabel(a) {
+        var parts = [a.number || a.account_number];
+        if (a.project || a.account_project) parts.push(a.project || a.account_project);
+        if (a.description || a.account_description) parts.push(a.description || a.account_description);
+        return parts.join(" - ");
+    }
+
     function api(method, path, body) {
         var opts = { method: method, headers: {} };
         if (body !== undefined) {
@@ -53,7 +61,7 @@
         return api("GET", "/api/entries")
             .then(function (data) {
                 entries = data;
-                renderEntries();
+                renderDays();
             });
     }
 
@@ -63,66 +71,129 @@
         });
     }
 
-    // --- Render entries table ---
-    function renderEntries() {
-        var tbody = document.getElementById("entries-body");
-        tbody.innerHTML = "";
-
-        var currentDate = null;
-        var dayTotal = 0;
-        var grandTotal = 0;
-
+    // --- Group entries by date ---
+    function groupByDate() {
+        var groups = [];
+        var map = {};
         for (var i = 0; i < entries.length; i++) {
             var e = entries[i];
-
-            if (e.date !== currentDate) {
-                if (currentDate !== null) {
-                    tbody.appendChild(makeDayTotalRow(currentDate, dayTotal));
-                    tbody.appendChild(makeDayGapRow());
-                    dayTotal = 0;
-                }
-                currentDate = e.date;
+            if (!map[e.date]) {
+                map[e.date] = { date: e.date, entries: [] };
+                groups.push(map[e.date]);
             }
-
-            dayTotal += e.duration || 0;
-            grandTotal += e.duration || 0;
-            tbody.appendChild(makeEntryRow(e));
+            map[e.date].entries.push(e);
         }
+        return groups;
+    }
 
-        // Last day total
-        if (currentDate !== null) {
-            tbody.appendChild(makeDayTotalRow(currentDate, dayTotal));
+    // --- Render ---
+    function renderDays() {
+        var container = document.getElementById("days-container");
+        container.innerHTML = "";
+        var groups = groupByDate();
+        var grandTotal = 0;
+
+        for (var g = 0; g < groups.length; g++) {
+            var group = groups[g];
+            var dayTotal = 0;
+            for (var i = 0; i < group.entries.length; i++) {
+                dayTotal += group.entries[i].duration || 0;
+            }
+            grandTotal += dayTotal;
+            container.appendChild(makeDayGroup(group, dayTotal));
         }
 
         document.getElementById("total-label").textContent = "Total: " + fmtDuration(grandTotal);
     }
 
-    function makeDayGapRow() {
-        var tr = document.createElement("tr");
-        tr.className = "day-gap";
-        var td = document.createElement("td");
-        td.colSpan = 9;
-        tr.appendChild(td);
-        return tr;
-    }
+    function makeDayGroup(group, dayTotal) {
+        var div = document.createElement("div");
+        div.className = "day-group";
+        div.dataset.date = group.date;
 
-    function makeDayTotalRow(date, total) {
-        var tr = document.createElement("tr");
-        tr.className = "day-total";
-        var td = document.createElement("td");
-        td.colSpan = 9;
-        td.textContent = dateDisplay(date) + " \u2014 " + fmtDuration(total);
-        tr.appendChild(td);
-        return tr;
+        // Header
+        var hdr = document.createElement("div");
+        hdr.className = "day-header";
+        var dateSpan = document.createElement("span");
+        dateSpan.className = "day-date";
+        dateSpan.textContent = dateDisplay(group.date);
+        var totalSpan = document.createElement("span");
+        totalSpan.className = "day-total";
+        totalSpan.textContent = fmtDuration(dayTotal);
+        hdr.appendChild(dateSpan);
+        hdr.appendChild(totalSpan);
+        div.appendChild(hdr);
+
+        // Table
+        var table = document.createElement("table");
+        var thead = document.createElement("thead");
+        var headerRow = document.createElement("tr");
+        var cols = [
+            ["col-dur", "Duration"],
+            ["col-desc", "Description"],
+            ["col-wi", "WI"],
+            ["col-pr", "PR"],
+            ["col-acct", "Account"],
+            ["col-idur", "Imp. Dur."],
+            ["col-notes", "Notes"],
+            ["col-act", ""],
+        ];
+        for (var c = 0; c < cols.length; c++) {
+            var th = document.createElement("th");
+            th.className = cols[c][0];
+            th.textContent = cols[c][1];
+            headerRow.appendChild(th);
+        }
+        thead.appendChild(headerRow);
+        table.appendChild(thead);
+
+        var tbody = document.createElement("tbody");
+        for (var i = 0; i < group.entries.length; i++) {
+            tbody.appendChild(makeEntryRow(group.entries[i]));
+        }
+        table.appendChild(tbody);
+        div.appendChild(table);
+
+        // Drop target
+        div.addEventListener("dragover", function (ev) {
+            ev.preventDefault();
+            div.classList.add("drag-over");
+        });
+        div.addEventListener("dragleave", function (ev) {
+            if (!div.contains(ev.relatedTarget)) {
+                div.classList.remove("drag-over");
+            }
+        });
+        div.addEventListener("drop", function (ev) {
+            ev.preventDefault();
+            div.classList.remove("drag-over");
+            var entryId = ev.dataTransfer.getData("text/plain");
+            if (entryId) {
+                api("POST", "/api/entries/" + entryId, { date: group.date }).then(loadEntries);
+            }
+        });
+
+        return div;
     }
 
     function makeEntryRow(entry) {
         var tr = document.createElement("tr");
         tr.dataset.id = entry.id;
-        tr.dataset.date = entry.date;
+        tr.draggable = true;
 
-        // Date
-        addCell(tr, entry, "date", dateDisplay(entry.date), "date");
+        // Drag start
+        tr.addEventListener("dragstart", function (ev) {
+            ev.dataTransfer.setData("text/plain", String(entry.id));
+            ev.dataTransfer.effectAllowed = "move";
+            tr.classList.add("dragging");
+        });
+        tr.addEventListener("dragend", function () {
+            tr.classList.remove("dragging");
+            // Remove all drag-over highlights
+            var groups = document.querySelectorAll(".day-group.drag-over");
+            for (var i = 0; i < groups.length; i++) groups[i].classList.remove("drag-over");
+        });
+
         // Duration
         addCell(tr, entry, "duration", fmtDuration(entry.duration), "duration-select");
         // Description
@@ -132,33 +203,78 @@
         // ADO PR
         addCell(tr, entry, "ado_pr", entry.ado_pr || "", "text");
         // Account
-        var acctLabel = entry.account_number || "";
-        if (entry.account_number) {
-            var parts = [entry.account_number];
-            if (entry.account_project) parts.push(entry.account_project);
-            if (entry.account_description) parts.push(entry.account_description);
-            acctLabel = parts.join(" - ");
-        }
-        addCell(tr, entry, "imputation_account_id", acctLabel, "account-select");
+        var al = entry.account_number ? acctLabel(entry) : "";
+        addCell(tr, entry, "imputation_account_id", al, "account-select");
         // Imputation duration
         addCell(tr, entry, "imputation_duration", fmtDuration(entry.imputation_duration), "duration-select");
         // Notes
         addCell(tr, entry, "notes", entry.notes ? "\u270E " + truncate(entry.notes, 15) : "", "notes");
-        // Delete
+        // Actions
         var actTd = document.createElement("td");
-        var btn = document.createElement("button");
-        btn.className = "btn-delete";
-        btn.textContent = "\u00d7";
-        btn.title = "Delete";
-        btn.onclick = function () {
+        var actions = document.createElement("span");
+        actions.className = "row-actions";
+
+        // Drag handle
+        var handle = document.createElement("span");
+        handle.className = "btn-row drag-handle";
+        handle.textContent = "\u2261";
+        handle.title = "Drag to move to another day";
+        actions.appendChild(handle);
+
+        // Date change
+        var dateBtn = document.createElement("button");
+        dateBtn.className = "btn-row";
+        dateBtn.textContent = "\u{1F4C5}";
+        dateBtn.title = "Change date";
+        dateBtn.onclick = function (ev) {
+            ev.stopPropagation();
+            openDatePicker(actTd, entry);
+        };
+        actions.appendChild(dateBtn);
+
+        // Delete
+        var delBtn = document.createElement("button");
+        delBtn.className = "btn-row btn-delete";
+        delBtn.textContent = "\u00d7";
+        delBtn.title = "Delete";
+        delBtn.onclick = function () {
             if (confirm("Delete this entry?")) {
                 api("POST", "/api/entries/" + entry.id + "/delete").then(loadEntries);
             }
         };
-        actTd.appendChild(btn);
+        actions.appendChild(delBtn);
+
+        actTd.appendChild(actions);
         tr.appendChild(actTd);
 
         return tr;
+    }
+
+    function openDatePicker(td, entry) {
+        // Remove any existing picker
+        var existing = td.querySelector("input[type=date]");
+        if (existing) return;
+        var input = document.createElement("input");
+        input.type = "date";
+        input.value = entry.date;
+        input.style.position = "absolute";
+        input.style.zIndex = "10";
+        td.style.position = "relative";
+        td.appendChild(input);
+        input.focus();
+
+        function done() {
+            if (input.value && input.value !== entry.date) {
+                api("POST", "/api/entries/" + entry.id, { date: input.value }).then(loadEntries);
+            } else {
+                input.remove();
+            }
+        }
+        input.onblur = done;
+        input.onkeydown = function (ev) {
+            if (ev.key === "Enter") { ev.preventDefault(); input.blur(); }
+            if (ev.key === "Escape") { input.remove(); }
+        };
     }
 
     function truncate(s, n) {
@@ -220,17 +336,10 @@
             for (var j = 0; j < accounts.length; j++) {
                 var opt2 = document.createElement("option");
                 opt2.value = accounts[j].id;
-                var lbl = [accounts[j].number];
-                if (accounts[j].project) lbl.push(accounts[j].project);
-                if (accounts[j].description) lbl.push(accounts[j].description);
-                opt2.textContent = lbl.join(" - ");
+                opt2.textContent = acctLabel(accounts[j]);
                 input.appendChild(opt2);
             }
             input.value = entry.imputation_account_id != null ? String(entry.imputation_account_id) : "";
-        } else if (inputType === "date") {
-            input = document.createElement("input");
-            input.type = "date";
-            input.value = entry[field] || "";
         } else {
             input = document.createElement("input");
             input.type = "text";
@@ -284,7 +393,7 @@
 
     function getAllEditableCells() {
         var cells = [];
-        var rows = document.querySelectorAll("#entries-body tr[data-id]");
+        var rows = document.querySelectorAll(".day-group tr[data-id]");
         for (var i = 0; i < rows.length; i++) {
             var tds = rows[i].querySelectorAll("td");
             for (var j = 0; j < tds.length - 1; j++) {
@@ -323,12 +432,11 @@
     // --- Scroll to today ---
     function scrollToToday() {
         var today = fmtDate(new Date());
-        var row = document.querySelector('#entries-body tr[data-date="' + today + '"]');
-        if (row) {
-            row.scrollIntoView({ behavior: "smooth", block: "center" });
+        var group = document.querySelector('.day-group[data-date="' + today + '"]');
+        if (group) {
+            group.scrollIntoView({ behavior: "smooth", block: "start" });
         } else {
-            // Scroll to bottom (most recent entries)
-            window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+            window.scrollTo({ top: 0, behavior: "smooth" });
         }
     }
 
@@ -364,55 +472,30 @@
     function makeAccountRow(acct) {
         var tr = document.createElement("tr");
 
-        // Number
-        var tdNum = document.createElement("td");
-        var inpNum = document.createElement("input");
-        inpNum.value = acct.number;
-        inpNum.onblur = function () {
-            if (inpNum.value !== acct.number) {
-                api("POST", "/api/accounts/" + acct.id, { number: inpNum.value }).then(function () {
-                    loadAccounts();
-                });
-            }
-        };
-        inpNum.onkeydown = function (ev) { if (ev.key === "Enter") inpNum.blur(); };
-        tdNum.appendChild(inpNum);
-        tr.appendChild(tdNum);
+        function makeField(field) {
+            var td = document.createElement("td");
+            var inp = document.createElement("input");
+            inp.value = acct[field] || "";
+            inp.onblur = function () {
+                if (inp.value !== (acct[field] || "")) {
+                    var data = {};
+                    data[field] = inp.value;
+                    api("POST", "/api/accounts/" + acct.id, data).then(renderAccounts);
+                }
+            };
+            inp.onkeydown = function (ev) { if (ev.key === "Enter") inp.blur(); };
+            td.appendChild(inp);
+            tr.appendChild(td);
+        }
 
-        // Description
-        var tdDesc = document.createElement("td");
-        var inpDesc = document.createElement("input");
-        inpDesc.value = acct.description;
-        inpDesc.onblur = function () {
-            if (inpDesc.value !== acct.description) {
-                api("POST", "/api/accounts/" + acct.id, { description: inpDesc.value }).then(function () {
-                    loadAccounts();
-                });
-            }
-        };
-        inpDesc.onkeydown = function (ev) { if (ev.key === "Enter") inpDesc.blur(); };
-        tdDesc.appendChild(inpDesc);
-        tr.appendChild(tdDesc);
-
-        // Project
-        var tdProj = document.createElement("td");
-        var inpProj = document.createElement("input");
-        inpProj.value = acct.project || "";
-        inpProj.onblur = function () {
-            if (inpProj.value !== (acct.project || "")) {
-                api("POST", "/api/accounts/" + acct.id, { project: inpProj.value }).then(function () {
-                    loadAccounts();
-                });
-            }
-        };
-        inpProj.onkeydown = function (ev) { if (ev.key === "Enter") inpProj.blur(); };
-        tdProj.appendChild(inpProj);
-        tr.appendChild(tdProj);
+        makeField("number");
+        makeField("description");
+        makeField("project");
 
         // Delete
         var tdAct = document.createElement("td");
         var btn = document.createElement("button");
-        btn.className = "btn-delete";
+        btn.className = "btn-row btn-delete";
         btn.textContent = "\u00d7";
         btn.title = "Deactivate";
         btn.onclick = function () {

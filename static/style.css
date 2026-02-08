@@ -10,7 +10,6 @@
     --accent-light: #e8f0e4;
     --danger: #c44;
     --row-alt: #fafafa;
-    --day-sep: #ccc;
 }
 
 body {
@@ -32,6 +31,7 @@ header {
 .header-left { display: flex; align-items: center; gap: 8px; }
 .logo { width: 28px; height: 28px; }
 header h1 { font-size: 16px; font-weight: 600; }
+.header-right { display: flex; gap: 6px; }
 .header-right button {
     background: rgba(255,255,255,0.2);
     color: #fff;
@@ -43,54 +43,60 @@ header h1 { font-size: 16px; font-weight: 600; }
 }
 .header-right button:hover { background: rgba(255,255,255,0.3); }
 
-.header-right { display: flex; gap: 6px; }
-
-/* Table */
+/* Main */
 main { padding: 0 12px 40px; }
 
-#entries-table {
-    width: 100%;
-    border-collapse: collapse;
+/* Day groups */
+.day-group {
     background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
     margin-top: 8px;
 }
-#entries-table th {
+.day-group.drag-over {
+    outline: 2px dashed var(--accent);
+    outline-offset: -2px;
+}
+.day-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 5px 10px;
     background: var(--accent-light);
+    border-bottom: 1px solid var(--border);
+    border-radius: 4px 4px 0 0;
     font-weight: 600;
-    font-size: 11px;
+    font-size: 12px;
+}
+.day-header .day-date { color: var(--text); }
+.day-header .day-total { color: var(--muted); font-weight: 400; }
+
+/* Entry table inside day group */
+.day-group table {
+    width: 100%;
+    border-collapse: collapse;
+}
+.day-group th {
+    font-weight: 600;
+    font-size: 10px;
     text-transform: uppercase;
     letter-spacing: 0.3px;
     text-align: left;
-    padding: 6px 6px;
-    border-bottom: 2px solid var(--accent);
-    position: sticky;
-    top: 0;
-    z-index: 1;
+    padding: 3px 6px;
+    border-bottom: 1px solid var(--border);
+    color: var(--muted);
 }
-#entries-table td {
+.day-group td {
     padding: 2px 4px;
     border-bottom: 1px solid var(--border);
     vertical-align: middle;
     height: 28px;
 }
-#entries-table tr:hover td { background: var(--accent-light); }
-#entries-table tr.day-gap td {
-    height: 10px;
-    padding: 0;
-    border: none;
-    background: var(--bg);
-}
-#entries-table tr.day-total td {
-    font-weight: 600;
-    font-size: 11px;
-    color: var(--muted);
-    background: var(--row-alt);
-    padding: 3px 6px;
-    border-bottom: none;
-}
+.day-group tr:last-child td { border-bottom: none; }
+.day-group tr:hover td { background: var(--accent-light); }
+.day-group tr.dragging { opacity: 0.4; }
 
 /* Column widths */
-.col-date { width: 130px; }
 .col-dur { width: 70px; }
 .col-desc { min-width: 180px; }
 .col-wi { width: 70px; }
@@ -98,7 +104,7 @@ main { padding: 0 12px 40px; }
 .col-acct { width: 130px; }
 .col-idur { width: 70px; }
 .col-notes { width: 120px; }
-.col-act { width: 30px; }
+.col-act { width: 50px; text-align: right; }
 
 /* Inline editing cells */
 td .cell-display {
@@ -127,18 +133,31 @@ td input, td select {
 }
 td select { padding: 1px 2px; }
 
-/* Delete button */
-.btn-delete {
+/* Row action buttons */
+.row-actions {
+    display: flex;
+    gap: 2px;
+    justify-content: flex-end;
+}
+.btn-row {
     background: none;
     border: none;
     color: var(--muted);
     cursor: pointer;
-    font-size: 14px;
-    padding: 2px 4px;
+    font-size: 13px;
+    padding: 2px 3px;
     border-radius: 2px;
     line-height: 1;
 }
-.btn-delete:hover { color: var(--danger); background: #fee; }
+.btn-row:hover { color: var(--text); background: rgba(0,0,0,0.05); }
+.btn-row.btn-delete:hover { color: var(--danger); background: #fee; }
+
+/* Drag handle */
+.drag-handle {
+    cursor: grab;
+    user-select: none;
+}
+.drag-handle:active { cursor: grabbing; }
 
 /* Footer */
 .table-footer {

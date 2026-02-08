@@ -43,26 +43,7 @@ header h1 { font-size: 16px; font-weight: 600; }
 }
 .header-right button:hover { background: rgba(255,255,255,0.3); }
 
-/* Week nav */
-.week-nav {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 12px;
-    padding: 8px;
-    background: var(--surface);
-    border-bottom: 1px solid var(--border);
-}
-.week-nav button {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    padding: 3px 10px;
-    border-radius: 3px;
-    cursor: pointer;
-    font-size: 12px;
-}
-.week-nav button:hover { background: var(--accent-light); }
-#week-label { font-weight: 600; min-width: 200px; text-align: center; }
+.header-right { display: flex; gap: 6px; }
 
 /* Table */
 main { padding: 0 12px 40px; }
@@ -93,20 +74,23 @@ main { padding: 0 12px 40px; }
     height: 28px;
 }
 #entries-table tr:hover td { background: var(--accent-light); }
-#entries-table tr.day-separator td {
-    border-top: 2px solid var(--day-sep);
+#entries-table tr.day-gap td {
+    height: 10px;
+    padding: 0;
+    border: none;
+    background: var(--bg);
 }
 #entries-table tr.day-total td {
     font-weight: 600;
     font-size: 11px;
     color: var(--muted);
     background: var(--row-alt);
-    border-bottom: 2px solid var(--day-sep);
     padding: 3px 6px;
+    border-bottom: none;
 }
 
 /* Column widths */
-.col-date { width: 90px; }
+.col-date { width: 130px; }
 .col-dur { width: 70px; }
 .col-desc { min-width: 180px; }
 .col-wi { width: 70px; }
@@ -173,7 +157,7 @@ td select { padding: 1px 2px; }
     font-size: 12px;
 }
 #btn-add:hover { opacity: 0.9; }
-#week-total { font-weight: 600; font-size: 13px; }
+#total-label { font-weight: 600; font-size: 13px; }
 
 /* Modal */
 .modal {

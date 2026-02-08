@@ -100,16 +100,24 @@ def delete_account(db_path, account_id):
 
 # --- Entries ---
 
-def list_entries(db_path, date_from, date_to):
+def list_entries(db_path, date_from=None, date_to=None):
     conn = get_connection(db_path)
-    rows = conn.execute(
-        """SELECT e.*, a.number AS account_number, a.description AS account_description
-           FROM entries e
-           LEFT JOIN imputation_accounts a ON e.imputation_account_id = a.id
-           WHERE e.date >= ? AND e.date <= ?
-           ORDER BY e.date, e.id""",
-        (date_from, date_to),
-    ).fetchall()
+    if date_from and date_to:
+        rows = conn.execute(
+            """SELECT e.*, a.number AS account_number, a.description AS account_description
+               FROM entries e
+               LEFT JOIN imputation_accounts a ON e.imputation_account_id = a.id
+               WHERE e.date >= ? AND e.date <= ?
+               ORDER BY e.date, e.id""",
+            (date_from, date_to),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            """SELECT e.*, a.number AS account_number, a.description AS account_description
+               FROM entries e
+               LEFT JOIN imputation_accounts a ON e.imputation_account_id = a.id
+               ORDER BY e.date, e.id"""
+        ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
 

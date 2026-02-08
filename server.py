@@ -135,9 +135,6 @@ class QuokkaHandler(BaseHTTPRequestHandler):
         qs = parse_qs(parsed.query)
         date_from = qs.get("from", [None])[0]
         date_to = qs.get("to", [None])[0]
-        if not date_from or not date_to:
-            self._send_error(400, "Missing 'from' and 'to' query parameters")
-            return
         entries = db.list_entries(DB_PATH, date_from, date_to)
         self._send_json(entries)
 

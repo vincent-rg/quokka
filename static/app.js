@@ -2,26 +2,11 @@
     "use strict";
 
     // --- State ---
-    var weekOffset = 0; // 0 = current week
     var entries = [];
     var accounts = [];
+    var DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
     // --- Helpers ---
-    function getMonday(date) {
-        var d = new Date(date);
-        var day = d.getDay();
-        var diff = d.getDate() - day + (day === 0 ? -6 : 1);
-        d.setDate(diff);
-        d.setHours(0, 0, 0, 0);
-        return d;
-    }
-
-    function addDays(d, n) {
-        var r = new Date(d);
-        r.setDate(r.getDate() + n);
-        return r;
-    }
-
     function fmtDate(d) {
         var y = d.getFullYear();
         var m = d.getMonth() + 1;
@@ -29,18 +14,21 @@
         return y + "-" + (m < 10 ? "0" : "") + m + "-" + (day < 10 ? "0" : "") + day;
     }
 
+    function dayName(isoDate) {
+        var parts = isoDate.split("-");
+        var d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+        return DAY_NAMES[d.getDay()];
+    }
+
+    function dateDisplay(isoDate) {
+        return dayName(isoDate) + "  " + isoDate;
+    }
+
     function fmtDuration(minutes) {
         if (minutes == null || minutes === "") return "";
         var h = Math.floor(minutes / 60);
         var m = minutes % 60;
         return h + ":" + (m < 10 ? "0" : "") + m;
-    }
-
-    function parseDuration(str) {
-        if (!str) return null;
-        var parts = str.split(":");
-        if (parts.length === 2) return parseInt(parts[0]) * 60 + parseInt(parts[1]);
-        return parseInt(str) * 60; // treat as hours
     }
 
     function durationOptions() {
@@ -60,24 +48,9 @@
         return fetch(path, opts).then(function (r) { return r.json(); });
     }
 
-    // --- Week range ---
-    function getWeekRange() {
-        var mon = getMonday(new Date());
-        mon = addDays(mon, weekOffset * 7);
-        var sun = addDays(mon, 6);
-        return { from: fmtDate(mon), to: fmtDate(sun), monday: mon };
-    }
-
-    function updateWeekLabel() {
-        var range = getWeekRange();
-        var label = range.from + "  to  " + range.to;
-        document.getElementById("week-label").textContent = label;
-    }
-
     // --- Load data ---
     function loadEntries() {
-        var range = getWeekRange();
-        return api("GET", "/api/entries?from=" + range.from + "&to=" + range.to)
+        return api("GET", "/api/entries")
             .then(function (data) {
                 entries = data;
                 renderEntries();
@@ -97,22 +70,22 @@
 
         var currentDate = null;
         var dayTotal = 0;
-        var weekTotal = 0;
+        var grandTotal = 0;
 
         for (var i = 0; i < entries.length; i++) {
             var e = entries[i];
 
-            // Day separator + previous day total
             if (e.date !== currentDate) {
                 if (currentDate !== null) {
                     tbody.appendChild(makeDayTotalRow(currentDate, dayTotal));
+                    tbody.appendChild(makeDayGapRow());
                     dayTotal = 0;
                 }
                 currentDate = e.date;
             }
 
             dayTotal += e.duration || 0;
-            weekTotal += e.duration || 0;
+            grandTotal += e.duration || 0;
             tbody.appendChild(makeEntryRow(e));
         }
 
@@ -121,7 +94,16 @@
             tbody.appendChild(makeDayTotalRow(currentDate, dayTotal));
         }
 
-        document.getElementById("week-total").textContent = "Week total: " + fmtDuration(weekTotal);
+        document.getElementById("total-label").textContent = "Total: " + fmtDuration(grandTotal);
+    }
+
+    function makeDayGapRow() {
+        var tr = document.createElement("tr");
+        tr.className = "day-gap";
+        var td = document.createElement("td");
+        td.colSpan = 9;
+        tr.appendChild(td);
+        return tr;
     }
 
     function makeDayTotalRow(date, total) {
@@ -129,7 +111,7 @@
         tr.className = "day-total";
         var td = document.createElement("td");
         td.colSpan = 9;
-        td.textContent = date + " \u2014 " + fmtDuration(total);
+        td.textContent = dateDisplay(date) + " \u2014 " + fmtDuration(total);
         tr.appendChild(td);
         return tr;
     }
@@ -137,15 +119,10 @@
     function makeEntryRow(entry) {
         var tr = document.createElement("tr");
         tr.dataset.id = entry.id;
-
-        // Determine if first entry for this date for separator styling
-        var idx = entries.indexOf(entry);
-        if (idx === 0 || entries[idx - 1].date !== entry.date) {
-            tr.className = "day-separator";
-        }
+        tr.dataset.date = entry.date;
 
         // Date
-        addCell(tr, entry, "date", entry.date, "date");
+        addCell(tr, entry, "date", dateDisplay(entry.date), "date");
         // Duration
         addCell(tr, entry, "duration", fmtDuration(entry.duration), "duration-select");
         // Description
@@ -206,7 +183,6 @@
 
     // --- Inline editing ---
     function startEdit(td, entry, field, inputType) {
-        // Already editing?
         if (td.querySelector("input, select")) return;
 
         var display = td.querySelector(".cell-display");
@@ -283,13 +259,11 @@
                 ev.preventDefault();
                 input.blur();
             } else if (ev.key === "Escape") {
-                // Cancel: restore display
                 input.remove();
                 display.style.display = "";
             } else if (ev.key === "Tab") {
                 ev.preventDefault();
                 input.blur();
-                // Move to next/prev editable cell
                 setTimeout(function () {
                     var cells = getAllEditableCells();
                     var currentIdx = cells.indexOf(td);
@@ -307,7 +281,7 @@
         var rows = document.querySelectorAll("#entries-body tr[data-id]");
         for (var i = 0; i < rows.length; i++) {
             var tds = rows[i].querySelectorAll("td");
-            for (var j = 0; j < tds.length - 1; j++) { // exclude action column
+            for (var j = 0; j < tds.length - 1; j++) {
                 if (tds[j].querySelector(".cell-display")) {
                     cells.push(tds[j]);
                 }
@@ -340,16 +314,24 @@
         };
     }
 
+    // --- Scroll to today ---
+    function scrollToToday() {
+        var today = fmtDate(new Date());
+        var row = document.querySelector('#entries-body tr[data-date="' + today + '"]');
+        if (row) {
+            row.scrollIntoView({ behavior: "smooth", block: "center" });
+        } else {
+            // Scroll to bottom (most recent entries)
+            window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+        }
+    }
+
     // --- Add entry ---
     function addEntry() {
         var today = fmtDate(new Date());
-        var range = getWeekRange();
-        var date = today;
-        // If today is not in the displayed week, use monday of displayed week
-        if (date < range.from || date > range.to) {
-            date = range.from;
-        }
-        api("POST", "/api/entries", { date: date, duration: 60 }).then(loadEntries);
+        api("POST", "/api/entries", { date: today, duration: 60 }).then(function () {
+            loadEntries().then(scrollToToday);
+        });
     }
 
     // --- Accounts modal ---
@@ -360,7 +342,6 @@
 
     function closeAccountsModal() {
         document.getElementById("accounts-modal").classList.add("hidden");
-        // Reload entries to reflect any account changes
         loadEntries();
     }
 
@@ -429,9 +410,7 @@
     }
 
     // --- Event listeners ---
-    document.getElementById("btn-prev").onclick = function () { weekOffset--; updateWeekLabel(); loadEntries(); };
-    document.getElementById("btn-next").onclick = function () { weekOffset++; updateWeekLabel(); loadEntries(); };
-    document.getElementById("btn-today").onclick = function () { weekOffset = 0; updateWeekLabel(); loadEntries(); };
+    document.getElementById("btn-today").onclick = scrollToToday;
     document.getElementById("btn-add").onclick = addEntry;
     document.getElementById("btn-accounts").onclick = openAccountsModal;
     document.getElementById("btn-close-accounts").onclick = closeAccountsModal;
@@ -441,7 +420,6 @@
     document.addEventListener("click", function (ev) {
         var popup = document.getElementById("notes-popup");
         if (!popup.classList.contains("hidden") && !popup.contains(ev.target)) {
-            // Check if click was on a notes cell
             var target = ev.target;
             while (target && target !== document.body) {
                 if (target.classList && target.classList.contains("cell-display")) return;
@@ -457,7 +435,8 @@
     };
 
     // --- Init ---
-    updateWeekLabel();
-    loadAccounts().then(loadEntries);
+    loadAccounts().then(function () {
+        loadEntries().then(scrollToToday);
+    });
 
 })();

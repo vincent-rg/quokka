@@ -23,7 +23,10 @@
     }
 
     function fmtDate(d) {
-        return d.toISOString().slice(0, 10);
+        var y = d.getFullYear();
+        var m = d.getMonth() + 1;
+        var day = d.getDate();
+        return y + "-" + (m < 10 ? "0" : "") + m + "-" + (day < 10 ? "0" : "") + day;
     }
 
     function fmtDuration(minutes) {

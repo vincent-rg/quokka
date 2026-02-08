@@ -167,13 +167,79 @@
         div.addEventListener("drop", function (ev) {
             ev.preventDefault();
             div.classList.remove("drag-over");
-            var entryId = ev.dataTransfer.getData("text/plain");
-            if (entryId) {
-                api("POST", "/api/entries/" + entryId, { date: group.date }).then(loadEntries);
-            }
+            var raw = ev.dataTransfer.getData("text/plain");
+            if (!raw) return;
+            var parts = raw.split(":");
+            var entryId = parts[0];
+            var sourceDate = parts[1] || "";
+            var sameDay = sourceDate === group.date;
+            showDropMenu(ev.clientX, ev.clientY, entryId, group.date, sameDay);
         });
 
         return div;
+    }
+
+    // --- Drop context menu ---
+    function showDropMenu(x, y, entryId, targetDate, sameDay) {
+        closeDropMenu();
+
+        var menu = document.createElement("div");
+        menu.className = "drop-menu";
+        menu.style.left = x + "px";
+        menu.style.top = y + "px";
+
+        var moveBtn = document.createElement("button");
+        moveBtn.textContent = "Move here";
+        if (sameDay) {
+            moveBtn.className = "disabled";
+        } else {
+            moveBtn.onclick = function () {
+                api("POST", "/api/entries/" + entryId, { date: targetDate }).then(loadEntries);
+                closeDropMenu();
+            };
+        }
+        menu.appendChild(moveBtn);
+
+        var dupBtn = document.createElement("button");
+        dupBtn.textContent = "Duplicate here";
+        dupBtn.onclick = function () {
+            api("POST", "/api/entries/" + entryId + "/duplicate", { date: targetDate }).then(loadEntries);
+            closeDropMenu();
+        };
+        menu.appendChild(dupBtn);
+
+        var hr = document.createElement("hr");
+        menu.appendChild(hr);
+
+        var cancelBtn = document.createElement("button");
+        cancelBtn.textContent = "Cancel";
+        cancelBtn.onclick = closeDropMenu;
+        menu.appendChild(cancelBtn);
+
+        document.body.appendChild(menu);
+
+        // Adjust if menu goes off-screen
+        var rect = menu.getBoundingClientRect();
+        if (rect.right > window.innerWidth) menu.style.left = (x - rect.width) + "px";
+        if (rect.bottom > window.innerHeight) menu.style.top = (y - rect.height) + "px";
+
+        // Close on outside click (next tick so this click doesn't trigger it)
+        setTimeout(function () {
+            document.addEventListener("mousedown", onOutsideClick);
+        }, 0);
+    }
+
+    function onOutsideClick(ev) {
+        var menu = document.querySelector(".drop-menu");
+        if (menu && !menu.contains(ev.target)) {
+            closeDropMenu();
+        }
+    }
+
+    function closeDropMenu() {
+        var menu = document.querySelector(".drop-menu");
+        if (menu) menu.remove();
+        document.removeEventListener("mousedown", onOutsideClick);
     }
 
     function makeEntryRow(entry) {
@@ -183,7 +249,7 @@
 
         // Drag start
         tr.addEventListener("dragstart", function (ev) {
-            ev.dataTransfer.setData("text/plain", String(entry.id));
+            ev.dataTransfer.setData("text/plain", entry.id + ":" + entry.date);
             ev.dataTransfer.effectAllowed = "move";
             tr.classList.add("dragging");
         });

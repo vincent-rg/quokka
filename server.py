@@ -98,6 +98,11 @@ class QuokkaHandler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
 
         # Entry routes
+        m = re.match(r"^/api/entries/(\d+)/duplicate$", path)
+        if m:
+            self._handle_duplicate_entry(int(m.group(1)))
+            return
+
         m = re.match(r"^/api/entries/(\d+)/delete$", path)
         if m:
             self._handle_delete_entry(int(m.group(1)))
@@ -153,6 +158,18 @@ class QuokkaHandler(BaseHTTPRequestHandler):
             self._send_error(404, "Entry not found")
             return
         self._send_json(entry)
+
+    def _handle_duplicate_entry(self, entry_id):
+        data = self._read_body()
+        target_date = data.get("date")
+        if not target_date:
+            self._send_error(400, "date is required")
+            return
+        entry = db.duplicate_entry(DB_PATH, entry_id, target_date)
+        if entry is None:
+            self._send_error(404, "Entry not found")
+            return
+        self._send_json(entry, 201)
 
     def _handle_delete_entry(self, entry_id):
         db.delete_entry(DB_PATH, entry_id)

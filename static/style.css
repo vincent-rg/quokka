@@ -163,6 +163,41 @@ td select { padding: 1px 2px; }
 }
 .drag-handle:active { cursor: grabbing; }
 
+/* Drop context menu */
+.drop-menu {
+    position: fixed;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.18);
+    z-index: 200;
+    padding: 4px 0;
+    min-width: 150px;
+}
+.drop-menu button {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 6px 14px;
+    border: none;
+    background: none;
+    font-size: 13px;
+    font-family: inherit;
+    cursor: pointer;
+    color: var(--text);
+}
+.drop-menu button:hover { background: var(--accent-light); }
+.drop-menu button.disabled {
+    color: var(--muted);
+    cursor: default;
+}
+.drop-menu button.disabled:hover { background: none; }
+.drop-menu hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 2px 0;
+}
+
 /* Footer */
 .table-footer {
     display: flex;

@@ -183,6 +183,42 @@ def update_entry(db_path, entry_id, data):
     return dict(row) if row else None
 
 
+def duplicate_entry(db_path, entry_id, target_date):
+    conn = get_connection(db_path)
+    row = conn.execute("SELECT * FROM entries WHERE id = ?", (entry_id,)).fetchone()
+    if not row:
+        conn.close()
+        return None
+    src = dict(row)
+    cur = conn.execute(
+        """INSERT INTO entries
+           (date, duration, description, notes, ado_workitem, ado_pr,
+            imputation_account_id, imputation_duration)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            target_date,
+            src["duration"],
+            src["description"],
+            src["notes"],
+            src["ado_workitem"],
+            src["ado_pr"],
+            src["imputation_account_id"],
+            src["imputation_duration"],
+        ),
+    )
+    new_id = cur.lastrowid
+    conn.commit()
+    new_row = conn.execute(
+        """SELECT e.*, a.number AS account_number, a.description AS account_description, a.project AS account_project
+           FROM entries e
+           LEFT JOIN imputation_accounts a ON e.imputation_account_id = a.id
+           WHERE e.id = ?""",
+        (new_id,),
+    ).fetchone()
+    conn.close()
+    return dict(new_row)
+
+
 def delete_entry(db_path, entry_id):
     conn = get_connection(db_path)
     conn.execute("DELETE FROM entries WHERE id = ?", (entry_id,))

@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quokka</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <header>
+        <div class="header-left">
+            <img src="/static/quokka.svg" alt="Quokka" class="logo">
+            <h1>Quokka</h1>
+        </div>
+        <div class="header-right">
+            <button id="btn-accounts" title="Manage imputation accounts">Accounts</button>
+        </div>
+    </header>
+
+    <nav class="week-nav">
+        <button id="btn-prev">&larr; Prev</button>
+        <span id="week-label"></span>
+        <button id="btn-today">Today</button>
+        <button id="btn-next">Next &rarr;</button>
+    </nav>
+
+    <main>
+        <table id="entries-table">
+            <thead>
+                <tr>
+                    <th class="col-date">Date</th>
+                    <th class="col-dur">Duration</th>
+                    <th class="col-desc">Description</th>
+                    <th class="col-wi">WI</th>
+                    <th class="col-pr">PR</th>
+                    <th class="col-acct">Account</th>
+                    <th class="col-idur">Imp. Dur.</th>
+                    <th class="col-notes">Notes</th>
+                    <th class="col-act"></th>
+                </tr>
+            </thead>
+            <tbody id="entries-body">
+            </tbody>
+        </table>
+        <div class="table-footer">
+            <button id="btn-add" title="Add entry">+ Add entry</button>
+            <span id="week-total"></span>
+        </div>
+    </main>
+
+    <!-- Accounts Modal -->
+    <div id="accounts-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Imputation Accounts</h2>
+                <button class="modal-close" id="btn-close-accounts">&times;</button>
+            </div>
+            <table id="accounts-table">
+                <thead>
+                    <tr>
+                        <th>Number</th>
+                        <th>Description</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody id="accounts-body">
+                </tbody>
+            </table>
+            <button id="btn-add-account">+ Add account</button>
+        </div>
+    </div>
+
+    <!-- Notes popup -->
+    <div id="notes-popup" class="popup hidden">
+        <textarea id="notes-textarea" rows="5"></textarea>
+        <div class="popup-actions">
+            <button id="notes-save">Save</button>
+            <button id="notes-cancel">Cancel</button>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

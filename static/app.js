@@ -794,12 +794,14 @@
             if (!ev.target.classList.contains("col-resize")) return;
             ev.preventDefault();
             var ci = parseInt(ev.target.dataset.colIndex);
-            var table = ev.target.closest("table");
-            if (!table) return;
-            var pageWidth = document.querySelector("main").clientWidth;
-            var tableWidth = table.offsetWidth;
-            if (tableWidth < pageWidth) {
-                colWidths[ci] = colWidths[ci] + (pageWidth - tableWidth);
+            var dayGroup = ev.target.closest(".day-group");
+            if (!dayGroup) return;
+            var available = document.documentElement.clientWidth
+                - parseFloat(getComputedStyle(document.querySelector("main")).paddingLeft) * 2
+                - parseFloat(getComputedStyle(dayGroup).borderLeftWidth) * 2;
+            var tw = totalColWidth();
+            if (tw < available) {
+                colWidths[ci] = colWidths[ci] + (available - tw);
                 applyColWidths();
             }
         });

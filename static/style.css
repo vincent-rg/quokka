@@ -21,30 +21,45 @@ body {
 
 /* Header */
 header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 6px 16px;
-    background: var(--accent);
-    color: #fff;
     position: sticky;
     top: 0;
     z-index: 50;
+    display: flex;
+    align-items: center;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
 }
-.header-left { display: flex; align-items: center; gap: 8px; }
+.header-brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 16px;
+}
 .logo { width: 28px; height: 28px; }
-header h1 { font-size: 16px; font-weight: 600; }
-.header-right { display: flex; gap: 6px; }
-.header-right button {
-    background: rgba(255,255,255,0.2);
-    color: #fff;
-    border: 1px solid rgba(255,255,255,0.3);
-    padding: 4px 12px;
+header h1 { font-size: 16px; font-weight: 600; color: var(--text); }
+.toolbar {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 16px;
+    position: relative;
+}
+.toolbar button {
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    padding: 4px 10px;
     border-radius: 3px;
     cursor: pointer;
     font-size: 12px;
 }
-.header-right button:hover { background: rgba(255,255,255,0.3); }
+.toolbar button:hover { background: var(--border); }
+.toolbar-sep {
+    width: 1px;
+    height: 18px;
+    background: var(--border);
+    margin: 0 4px;
+}
 
 /* Main */
 main { padding: 0 12px 40px; }
@@ -115,17 +130,24 @@ main { padding: 0 12px 40px; }
 .day-group tr:hover td { background: #f0f0f0; }
 .day-group tr.dragging { opacity: 0.4; }
 .day-group td .zero-warn { color: #c77800; }
+.day-group td .date-warn { color: #c77800; margin-right: 4px; cursor: default; }
 
-/* Column widths */
-.col-dur { width: 70px; }
-.col-desc { min-width: 180px; }
-.col-wi { width: 70px; }
-.col-pr { width: 70px; }
-.col-acct { width: 130px; }
-.col-idur { width: 70px; }
-.col-notes { width: 120px; }
-.col-link { width: 28px; text-align: center; }
-.col-act { width: 50px; text-align: right; }
+/* Column widths (defaults, overridden by JS resize) */
+.col-link { text-align: center; }
+.col-act { text-align: right; }
+
+/* Column resize handle */
+.day-group th { position: relative; }
+.col-resize {
+    position: absolute;
+    right: -2px;
+    top: 0;
+    bottom: 0;
+    width: 5px;
+    cursor: col-resize;
+    z-index: 1;
+}
+.col-resize:hover { background: var(--accent); opacity: 0.4; }
 
 /* Inline editing cells */
 td .cell-display {
@@ -231,7 +253,6 @@ td select { padding: 1px 2px; }
     right: 0;
     z-index: 60;
 }
-.header-right { position: relative; }
 
 /* Modal */
 .modal {

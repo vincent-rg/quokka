@@ -246,6 +246,7 @@ class QuokkaHandler(BaseHTTPRequestHandler):
             account = db.create_account(
                 DB_PATH, data["number"], data.get("description", ""),
                 data.get("project", ""),
+                data.get("open_date"), data.get("close_date"),
             )
         except Exception:
             self._send_error(409, "Account number already exists")

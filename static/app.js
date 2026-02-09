@@ -6,6 +6,7 @@
     var accounts = [];
     var DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
     var COL_COUNT = 9; // number of columns in entry tables
+    var colWidths = [70, 180, 70, 70, 130, 70, 120, 28, 50]; // initial column widths
 
     // Group colors: 8 distinct hues for left-border + highlight
     var GROUP_COLORS = [
@@ -156,6 +157,17 @@
 
         // Table
         var table = document.createElement("table");
+        table.style.tableLayout = "fixed";
+
+        // Colgroup for synced widths
+        var colgroup = document.createElement("colgroup");
+        for (var ci = 0; ci < COL_COUNT; ci++) {
+            var col = document.createElement("col");
+            col.style.width = colWidths[ci] + "px";
+            colgroup.appendChild(col);
+        }
+        table.appendChild(colgroup);
+
         var thead = document.createElement("thead");
         var headerRow = document.createElement("tr");
         var cols = [
@@ -173,6 +185,13 @@
             var th = document.createElement("th");
             th.className = cols[c][0];
             th.textContent = cols[c][1];
+            // Resize handle (not on last column)
+            if (c < cols.length - 1) {
+                var handle = document.createElement("div");
+                handle.className = "col-resize";
+                handle.dataset.colIndex = c;
+                th.appendChild(handle);
+            }
             headerRow.appendChild(th);
         }
         thead.appendChild(headerRow);
@@ -314,9 +333,23 @@
         addCell(tr, entry, "ado_workitem", entry.ado_workitem || "", "text");
         // ADO PR
         addCell(tr, entry, "ado_pr", entry.ado_pr || "", "text");
-        // Account
+        // Account (with date warning)
         var al = entry.account_number ? acctLabel(entry) : "";
-        addCell(tr, entry, "imputation_account_id", al, "account-select");
+        var acctWarn = null;
+        if (entry.imputation_account_id) {
+            for (var ai = 0; ai < accounts.length; ai++) {
+                if (accounts[ai].id === entry.imputation_account_id) {
+                    var a = accounts[ai];
+                    if (a.open_date && entry.date < a.open_date) {
+                        acctWarn = "Account not yet open (opens " + a.open_date + ")";
+                    } else if (a.close_date && entry.date > a.close_date) {
+                        acctWarn = "Account closed (closed " + a.close_date + ")";
+                    }
+                    break;
+                }
+            }
+        }
+        addCell(tr, entry, "imputation_account_id", al, "account-select", null, acctWarn);
         // Imputation duration
         addCell(tr, entry, "imputation_duration", fmtDuration(entry.imputation_duration), "duration-select");
         // Notes
@@ -415,16 +448,23 @@
         return s.length > n ? s.slice(0, n) + "\u2026" : s;
     }
 
-    function addCell(tr, entry, field, displayText, inputType, extraClass) {
+    function addCell(tr, entry, field, displayText, inputType, extraClass, warning) {
         var td = document.createElement("td");
         var display = document.createElement("span");
         display.className = "cell-display";
         if (extraClass) display.classList.add(extraClass);
+        if (warning) {
+            var warn = document.createElement("span");
+            warn.className = "date-warn";
+            warn.textContent = "\u26A0 ";
+            warn.title = warning;
+            display.appendChild(warn);
+        }
         if (!displayText && displayText !== 0) {
             display.classList.add("placeholder");
-            display.textContent = "\u00b7\u00b7\u00b7";
+            display.appendChild(document.createTextNode("\u00b7\u00b7\u00b7"));
         } else {
-            display.textContent = displayText;
+            display.appendChild(document.createTextNode(displayText));
         }
 
         display.onclick = function () {
@@ -584,7 +624,7 @@
     }
 
     function addEntryForDate() {
-        var container = document.querySelector(".header-right");
+        var container = document.querySelector(".toolbar");
         var existing = container.querySelector(".header-date-picker");
         if (existing) { existing.remove(); return; }
         var input = document.createElement("input");
@@ -657,6 +697,28 @@
         makeField("description");
         makeField("project");
 
+        // Date fields
+        function makeDateField(field) {
+            var td = document.createElement("td");
+            var inp = document.createElement("input");
+            inp.type = "date";
+            inp.value = acct[field] || "";
+            inp.onblur = function () {
+                var newVal = inp.value || null;
+                var oldVal = acct[field] || null;
+                if (newVal !== oldVal) {
+                    var data = {};
+                    data[field] = newVal;
+                    api("POST", "/api/accounts/" + acct.id, data).then(renderAccounts);
+                }
+            };
+            inp.onkeydown = function (ev) { if (ev.key === "Enter") inp.blur(); };
+            td.appendChild(inp);
+            tr.appendChild(td);
+        }
+        makeDateField("open_date");
+        makeDateField("close_date");
+
         // Delete
         var tdAct = document.createElement("td");
         var btn = document.createElement("button");
@@ -677,6 +739,43 @@
     function addAccount() {
         api("POST", "/api/accounts", { number: "NEW", description: "" }).then(renderAccounts);
     }
+
+    // --- Column resize ---
+    function applyColWidths() {
+        var allCols = document.querySelectorAll(".day-group colgroup col");
+        for (var i = 0; i < allCols.length; i++) {
+            allCols[i].style.width = colWidths[i % COL_COUNT] + "px";
+        }
+    }
+
+    (function () {
+        var resizing = false, startX = 0, colIdx = 0, startW = 0;
+
+        document.getElementById("days-container").addEventListener("mousedown", function (ev) {
+            if (!ev.target.classList.contains("col-resize")) return;
+            ev.preventDefault();
+            resizing = true;
+            colIdx = parseInt(ev.target.dataset.colIndex);
+            startX = ev.clientX;
+            startW = colWidths[colIdx];
+            document.body.style.cursor = "col-resize";
+            document.body.style.userSelect = "none";
+        });
+
+        document.addEventListener("mousemove", function (ev) {
+            if (!resizing) return;
+            var delta = ev.clientX - startX;
+            colWidths[colIdx] = Math.max(30, startW + delta);
+            applyColWidths();
+        });
+
+        document.addEventListener("mouseup", function () {
+            if (!resizing) return;
+            resizing = false;
+            document.body.style.cursor = "";
+            document.body.style.userSelect = "";
+        });
+    })();
 
     // --- Group hover cross-highlight ---
     document.getElementById("days-container").addEventListener("mouseenter", function (ev) {
@@ -942,6 +1041,8 @@
     }
 
     // --- Event listeners ---
+    document.getElementById("btn-undo").onclick = doUndo;
+    document.getElementById("btn-redo").onclick = doRedo;
     document.getElementById("btn-today").onclick = scrollToToday;
     document.getElementById("btn-add").onclick = addEntryToday;
     document.getElementById("btn-add-date").onclick = addEntryForDate;
@@ -1003,27 +1104,35 @@
         }, 2000);
     }
 
+    function doUndo() {
+        api("POST", "/api/undo").then(function (result) {
+            if (result.ok) {
+                showToast("Undo: " + (FRIENDLY_ACTIONS[result.action_type] || result.action_type));
+                loadEntries();
+            }
+        });
+    }
+
+    function doRedo() {
+        api("POST", "/api/redo").then(function (result) {
+            if (result.ok) {
+                showToast("Redo: " + (FRIENDLY_ACTIONS[result.action_type] || result.action_type));
+                loadEntries();
+            }
+        });
+    }
+
     document.addEventListener("keydown", function (ev) {
         var tag = ev.target.tagName;
         if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
 
         if ((ev.ctrlKey || ev.metaKey) && ev.key === "z" && !ev.shiftKey) {
             ev.preventDefault();
-            api("POST", "/api/undo").then(function (result) {
-                if (result.ok) {
-                    showToast("Undo: " + (FRIENDLY_ACTIONS[result.action_type] || result.action_type));
-                    loadEntries();
-                }
-            });
+            doUndo();
         }
         if ((ev.ctrlKey || ev.metaKey) && (ev.key === "y" || (ev.key === "z" && ev.shiftKey))) {
             ev.preventDefault();
-            api("POST", "/api/redo").then(function (result) {
-                if (result.ok) {
-                    showToast("Redo: " + (FRIENDLY_ACTIONS[result.action_type] || result.action_type));
-                    loadEntries();
-                }
-            });
+            doRedo();
         }
     });
 

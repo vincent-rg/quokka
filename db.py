@@ -19,6 +19,8 @@ def init_db(db_path):
             number TEXT NOT NULL UNIQUE,
             description TEXT NOT NULL DEFAULT '',
             project TEXT NOT NULL DEFAULT '',
+            open_date TEXT,
+            close_date TEXT,
             active INTEGER NOT NULL DEFAULT 1
         );
 
@@ -51,6 +53,11 @@ def init_db(db_path):
     cols = [r[1] for r in conn.execute("PRAGMA table_info(imputation_accounts)").fetchall()]
     if "project" not in cols:
         conn.execute("ALTER TABLE imputation_accounts ADD COLUMN project TEXT NOT NULL DEFAULT ''")
+    # Migration: add open_date/close_date to accounts if missing
+    if "open_date" not in cols:
+        conn.execute("ALTER TABLE imputation_accounts ADD COLUMN open_date TEXT")
+    if "close_date" not in cols:
+        conn.execute("ALTER TABLE imputation_accounts ADD COLUMN close_date TEXT")
     # Migration: add group_id column if missing
     entry_cols = [r[1] for r in conn.execute("PRAGMA table_info(entries)").fetchall()]
     if "group_id" not in entry_cols:
@@ -189,11 +196,11 @@ def list_accounts(db_path, include_inactive=False):
     return [dict(r) for r in rows]
 
 
-def create_account(db_path, number, description="", project=""):
+def create_account(db_path, number, description="", project="", open_date=None, close_date=None):
     conn = get_connection(db_path)
     cur = conn.execute(
-        "INSERT INTO imputation_accounts (number, description, project) VALUES (?, ?, ?)",
-        (number, description, project),
+        "INSERT INTO imputation_accounts (number, description, project, open_date, close_date) VALUES (?, ?, ?, ?, ?)",
+        (number, description, project, open_date, close_date),
     )
     account_id = cur.lastrowid
     conn.commit()
@@ -206,7 +213,7 @@ def create_account(db_path, number, description="", project=""):
 
 def update_account(db_path, account_id, **fields):
     conn = get_connection(db_path)
-    allowed = {"number", "description", "project", "active"}
+    allowed = {"number", "description", "project", "open_date", "close_date", "active"}
     updates = {k: v for k, v in fields.items() if k in allowed}
     if not updates:
         conn.close()

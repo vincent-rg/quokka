@@ -1,4 +1,5 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+.hidden { display: none; }
 
 :root {
     --bg: #f5f5f5;
@@ -59,6 +60,17 @@ header h1 { font-size: 16px; font-weight: 600; color: var(--text); }
 .toolbar button:hover { background: var(--border); }
 .toolbar button:disabled { opacity: 0.35; cursor: default; }
 .toolbar button:disabled:hover { background: var(--bg); }
+.toolbar select {
+    border: 1px solid var(--border);
+    padding: 3px 6px;
+    border-radius: 3px;
+    font-size: 12px;
+    font-family: inherit;
+    background: var(--bg);
+    cursor: pointer;
+}
+.toolbar-group { display: flex; align-items: center; gap: 4px; }
+.toolbar-group.hidden { display: none; }
 .toolbar-sep {
     width: 1px;
     height: 18px;
@@ -295,12 +307,13 @@ td select { padding: 1px 2px; }
 }
 .modal-close:hover { color: var(--text); }
 
+#view-accounts { padding-top: 8px; }
 #accounts-table {
-    width: 100%;
     border-collapse: collapse;
     margin-bottom: 8px;
 }
 #accounts-table th {
+    position: relative;
     text-align: left;
     font-size: 11px;
     text-transform: uppercase;

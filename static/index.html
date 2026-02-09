@@ -13,47 +13,38 @@
             <h1>Quokka</h1>
         </div>
         <div class="toolbar">
+            <select id="view-select">
+                <option value="entries">Entries</option>
+                <option value="accounts">Accounts</option>
+            </select>
+            <span class="toolbar-sep"></span>
+            <span id="toolbar-entries" class="toolbar-group">
+                <button id="btn-add" title="Add entry for today">+ Today</button>
+                <button id="btn-add-date" title="Add entry for another day">+ Date...</button>
+                <button id="btn-today" title="Scroll to today">Today</button>
+            </span>
+            <span id="toolbar-accounts" class="toolbar-group hidden">
+                <button id="btn-add-account">+ Add</button>
+            </span>
+            <span class="toolbar-sep"></span>
             <button id="btn-undo" title="Undo (Ctrl+Z)">&#x21B6;</button>
             <button id="btn-redo" title="Redo (Ctrl+Y)">&#x21B7;</button>
-            <span class="toolbar-sep"></span>
-            <button id="btn-add" title="Add entry for today">+ Today</button>
-            <button id="btn-add-date" title="Add entry for another day">+ Date...</button>
-            <button id="btn-today" title="Scroll to today">Today</button>
-            <button id="btn-accounts" title="Manage imputation accounts">Accounts</button>
         </div>
     </header>
 
     <main>
-        <div id="days-container"></div>
-        <div class="table-footer">
-            <span id="total-label"></span>
+        <div id="view-entries">
+            <div id="days-container"></div>
+            <div class="table-footer">
+                <span id="total-label"></span>
+            </div>
+        </div>
+        <div id="view-accounts" class="hidden">
+            <table id="accounts-table">
+                <tbody id="accounts-body"></tbody>
+            </table>
         </div>
     </main>
-
-    <!-- Accounts Modal -->
-    <div id="accounts-modal" class="modal hidden">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>Imputation Accounts</h2>
-                <button class="modal-close" id="btn-close-accounts">&times;</button>
-            </div>
-            <table id="accounts-table">
-                <thead>
-                    <tr>
-                        <th>Number</th>
-                        <th>Description</th>
-                        <th>Project</th>
-                        <th>Open</th>
-                        <th>Close</th>
-                        <th></th>
-                    </tr>
-                </thead>
-                <tbody id="accounts-body">
-                </tbody>
-            </table>
-            <button id="btn-add-account">+ Add account</button>
-        </div>
-    </div>
 
     <!-- Grouping Modal -->
     <div id="grouping-modal" class="modal hidden">

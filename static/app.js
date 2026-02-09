@@ -25,6 +25,27 @@
         localStorage.setItem("colWidths", JSON.stringify(colWidths));
     }
 
+    // Account table column widths
+    var ACCT_COL_COUNT = 6;
+    var ACCT_COL_DEFAULTS = [80, 180, 120, 100, 100, 40];
+    var acctColWidths = (function () {
+        try {
+            var saved = JSON.parse(localStorage.getItem("acctColWidths"));
+            if (saved && saved.length === ACCT_COL_DEFAULTS.length) return saved;
+        } catch (e) {}
+        return ACCT_COL_DEFAULTS.slice();
+    })();
+
+    function totalAcctColWidth() {
+        var s = 0;
+        for (var i = 0; i < acctColWidths.length; i++) s += acctColWidths[i];
+        return s;
+    }
+
+    function saveAcctColWidths() {
+        localStorage.setItem("acctColWidths", JSON.stringify(acctColWidths));
+    }
+
     // Group colors: 8 distinct hues for left-border + highlight
     var GROUP_COLORS = [
         "#e74c3c", "#3498db", "#2ecc71", "#f39c12",
@@ -674,25 +695,73 @@
         };
     }
 
-    // --- Accounts modal ---
-    function openAccountsModal() {
-        document.getElementById("accounts-modal").classList.remove("hidden");
-        renderAccounts();
-    }
-
-    function closeAccountsModal() {
-        document.getElementById("accounts-modal").classList.add("hidden");
-        loadEntries();
+    // --- View switching ---
+    function switchView(view) {
+        document.getElementById("view-entries").classList.toggle("hidden", view !== "entries");
+        document.getElementById("view-accounts").classList.toggle("hidden", view !== "accounts");
+        document.getElementById("toolbar-entries").classList.toggle("hidden", view !== "entries");
+        document.getElementById("toolbar-accounts").classList.toggle("hidden", view !== "accounts");
+        document.getElementById("view-select").value = view;
+        if (view === "accounts") renderAccounts();
+        if (view === "entries") loadEntries();
     }
 
     function renderAccounts() {
         loadAccounts().then(function () {
+            var table = document.getElementById("accounts-table");
+            table.style.tableLayout = "fixed";
+            table.style.width = totalAcctColWidth() + "px";
+
+            // Rebuild colgroup
+            var oldCg = table.querySelector("colgroup");
+            if (oldCg) oldCg.remove();
+            var colgroup = document.createElement("colgroup");
+            for (var ci = 0; ci < ACCT_COL_COUNT; ci++) {
+                var col = document.createElement("col");
+                col.style.width = acctColWidths[ci] + "px";
+                colgroup.appendChild(col);
+            }
+            table.insertBefore(colgroup, table.firstChild);
+
+            // Rebuild thead with resize handles
+            var oldThead = table.querySelector("thead");
+            if (oldThead) oldThead.remove();
+            var thead = document.createElement("thead");
+            var headerRow = document.createElement("tr");
+            var acctCols = ["Number", "Description", "Project", "Open", "Close", ""];
+            for (var c = 0; c < acctCols.length; c++) {
+                var th = document.createElement("th");
+                th.textContent = acctCols[c];
+                if (c < acctCols.length - 1) {
+                    var handle = document.createElement("div");
+                    handle.className = "col-resize";
+                    handle.dataset.colIndex = c;
+                    th.appendChild(handle);
+                }
+                headerRow.appendChild(th);
+            }
+            thead.appendChild(headerRow);
+            table.insertBefore(thead, table.querySelector("tbody"));
+
             var tbody = document.getElementById("accounts-body");
             tbody.innerHTML = "";
             for (var i = 0; i < accounts.length; i++) {
                 tbody.appendChild(makeAccountRow(accounts[i]));
             }
+
+            applyAcctColWidths();
         });
+    }
+
+    function applyAcctColWidths() {
+        var table = document.getElementById("accounts-table");
+        if (!table) return;
+        var w = totalAcctColWidth();
+        table.style.width = w + "px";
+        var cols = table.querySelectorAll("colgroup col");
+        for (var i = 0; i < cols.length; i++) {
+            cols[i].style.width = acctColWidths[i] + "px";
+        }
     }
 
     function makeAccountRow(acct) {
@@ -818,6 +887,51 @@
                 colWidths[ci] = colWidths[ci] + (available - tw);
                 applyColWidths();
                 saveColWidths();
+            }
+        });
+    })();
+
+    // --- Account table column resize ---
+    (function () {
+        var resizing = false, startX = 0, colIdx = 0, startW = 0;
+
+        document.getElementById("accounts-table").addEventListener("mousedown", function (ev) {
+            if (!ev.target.classList.contains("col-resize")) return;
+            ev.preventDefault();
+            resizing = true;
+            colIdx = parseInt(ev.target.dataset.colIndex);
+            startX = ev.clientX;
+            startW = acctColWidths[colIdx];
+            document.body.style.cursor = "col-resize";
+            document.body.style.userSelect = "none";
+        });
+
+        document.addEventListener("mousemove", function (ev) {
+            if (!resizing) return;
+            var delta = ev.clientX - startX;
+            acctColWidths[colIdx] = Math.max(30, startW + delta);
+            applyAcctColWidths();
+        });
+
+        document.addEventListener("mouseup", function () {
+            if (!resizing) return;
+            resizing = false;
+            document.body.style.cursor = "";
+            document.body.style.userSelect = "";
+            saveAcctColWidths();
+        });
+
+        document.getElementById("accounts-table").addEventListener("dblclick", function (ev) {
+            if (!ev.target.classList.contains("col-resize")) return;
+            ev.preventDefault();
+            var ci = parseInt(ev.target.dataset.colIndex);
+            var available = document.documentElement.clientWidth
+                - parseFloat(getComputedStyle(document.querySelector("main")).paddingLeft) * 2;
+            var tw = totalAcctColWidth();
+            if (tw < available) {
+                acctColWidths[ci] = acctColWidths[ci] + (available - tw);
+                applyAcctColWidths();
+                saveAcctColWidths();
             }
         });
     })();
@@ -1091,9 +1205,8 @@
     document.getElementById("btn-today").onclick = scrollToToday;
     document.getElementById("btn-add").onclick = addEntryToday;
     document.getElementById("btn-add-date").onclick = addEntryForDate;
-    document.getElementById("btn-accounts").onclick = openAccountsModal;
-    document.getElementById("btn-close-accounts").onclick = closeAccountsModal;
     document.getElementById("btn-add-account").onclick = addAccount;
+    document.getElementById("view-select").onchange = function () { switchView(this.value); };
     document.getElementById("btn-close-grouping").onclick = closeGroupingModal;
     document.getElementById("btn-cancel-link").onclick = closeGroupingModal;
     document.getElementById("btn-apply-link").onclick = applyGroupingLink;
@@ -1115,9 +1228,6 @@
     });
 
     // Close modals on backdrop click
-    document.getElementById("accounts-modal").onclick = function (ev) {
-        if (ev.target === this) closeAccountsModal();
-    };
     document.getElementById("grouping-modal").onclick = function (ev) {
         if (ev.target === this) closeGroupingModal();
     };

@@ -976,6 +976,57 @@
         if (ev.target === this) closeGroupingModal();
     };
 
+    // --- Undo / Redo ---
+    var FRIENDLY_ACTIONS = {
+        create_entry: "create",
+        update_entry: "edit",
+        delete_entry: "delete",
+        duplicate_entry: "duplicate",
+        duplicate_link_entry: "duplicate & link",
+        ungroup_entry: "ungroup",
+        link_entries: "link"
+    };
+
+    function showToast(msg) {
+        var existing = document.getElementById("undo-toast");
+        if (existing) existing.remove();
+        var toast = document.createElement("div");
+        toast.id = "undo-toast";
+        toast.className = "undo-toast";
+        toast.textContent = msg;
+        document.body.appendChild(toast);
+        toast.offsetHeight; // force reflow
+        toast.classList.add("visible");
+        setTimeout(function () {
+            toast.classList.remove("visible");
+            setTimeout(function () { toast.remove(); }, 300);
+        }, 2000);
+    }
+
+    document.addEventListener("keydown", function (ev) {
+        var tag = ev.target.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+
+        if ((ev.ctrlKey || ev.metaKey) && ev.key === "z" && !ev.shiftKey) {
+            ev.preventDefault();
+            api("POST", "/api/undo").then(function (result) {
+                if (result.ok) {
+                    showToast("Undo: " + (FRIENDLY_ACTIONS[result.action_type] || result.action_type));
+                    loadEntries();
+                }
+            });
+        }
+        if ((ev.ctrlKey || ev.metaKey) && (ev.key === "y" || (ev.key === "z" && ev.shiftKey))) {
+            ev.preventDefault();
+            api("POST", "/api/redo").then(function (result) {
+                if (result.ok) {
+                    showToast("Redo: " + (FRIENDLY_ACTIONS[result.action_type] || result.action_type));
+                    loadEntries();
+                }
+            });
+        }
+    });
+
     // --- Init ---
     loadAccounts().then(function () {
         loadEntries().then(scrollToToday);

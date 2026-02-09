@@ -1,6 +1,7 @@
 import sqlite3
 import os
 import uuid
+import json
 
 
 def get_connection(db_path):
@@ -36,6 +37,15 @@ def init_db(db_path):
         );
 
         CREATE INDEX IF NOT EXISTS idx_entries_date ON entries(date);
+
+        CREATE TABLE IF NOT EXISTS undo_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            action_type TEXT NOT NULL,
+            before_state TEXT NOT NULL,
+            after_state TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            undone INTEGER NOT NULL DEFAULT 0
+        );
     """)
     # Migration: add project column if missing
     cols = [r[1] for r in conn.execute("PRAGMA table_info(imputation_accounts)").fetchall()]
@@ -48,6 +58,119 @@ def init_db(db_path):
         conn.execute("CREATE INDEX IF NOT EXISTS idx_entries_group_id ON entries(group_id)")
     conn.commit()
     conn.close()
+
+
+# --- Undo/Redo infrastructure ---
+
+ENTRY_COLUMNS = [
+    "id", "date", "duration", "description", "notes",
+    "ado_workitem", "ado_pr", "imputation_account_id",
+    "imputation_duration", "group_id",
+]
+
+UNDO_STACK_LIMIT = 50
+
+
+def _snapshot_entries(conn, entry_ids):
+    if not entry_ids:
+        return []
+    placeholders = ",".join("?" * len(entry_ids))
+    rows = conn.execute(
+        f"SELECT * FROM entries WHERE id IN ({placeholders})", list(entry_ids)
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def _record_undo(conn, action_type, before_entries, after_entries):
+    if before_entries == after_entries:
+        return
+    conn.execute("DELETE FROM undo_log WHERE undone = 1")
+    conn.execute(
+        "INSERT INTO undo_log (action_type, before_state, after_state) VALUES (?, ?, ?)",
+        (action_type, json.dumps(before_entries), json.dumps(after_entries)),
+    )
+    conn.execute("""
+        DELETE FROM undo_log WHERE id NOT IN (
+            SELECT id FROM undo_log ORDER BY id DESC LIMIT ?
+        )
+    """, (UNDO_STACK_LIMIT,))
+
+
+def _restore_entries(conn, target_state, all_entry_ids):
+    target_by_id = {e["id"]: e for e in target_state}
+    target_ids = set(target_by_id.keys())
+    all_ids = set(all_entry_ids)
+
+    # Delete entries that shouldn't exist in target state
+    to_delete = all_ids - target_ids
+    for eid in to_delete:
+        conn.execute("DELETE FROM entries WHERE id = ?", (eid,))
+
+    # Insert or update entries to match target state
+    for eid, edata in target_by_id.items():
+        existing = conn.execute("SELECT id FROM entries WHERE id = ?", (eid,)).fetchone()
+        if existing:
+            sets = ", ".join(f"{col} = ?" for col in ENTRY_COLUMNS if col != "id")
+            vals = [edata.get(col) for col in ENTRY_COLUMNS if col != "id"]
+            vals.append(eid)
+            conn.execute(f"UPDATE entries SET {sets} WHERE id = ?", vals)
+        else:
+            cols = ", ".join(ENTRY_COLUMNS)
+            placeholders = ", ".join("?" * len(ENTRY_COLUMNS))
+            vals = [edata.get(col) for col in ENTRY_COLUMNS]
+            conn.execute(f"INSERT INTO entries ({cols}) VALUES ({placeholders})", vals)
+
+
+def perform_undo(db_path):
+    conn = get_connection(db_path)
+    row = conn.execute(
+        "SELECT * FROM undo_log WHERE undone = 0 ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    if not row:
+        conn.close()
+        return {"ok": False, "reason": "nothing_to_undo"}
+
+    record = dict(row)
+    before = json.loads(record["before_state"])
+    after = json.loads(record["after_state"])
+
+    all_ids = set()
+    for e in before:
+        all_ids.add(e["id"])
+    for e in after:
+        all_ids.add(e["id"])
+
+    _restore_entries(conn, before, all_ids)
+    conn.execute("UPDATE undo_log SET undone = 1 WHERE id = ?", (record["id"],))
+    conn.commit()
+    conn.close()
+    return {"ok": True, "action_type": record["action_type"]}
+
+
+def perform_redo(db_path):
+    conn = get_connection(db_path)
+    row = conn.execute(
+        "SELECT * FROM undo_log WHERE undone = 1 ORDER BY id ASC LIMIT 1"
+    ).fetchone()
+    if not row:
+        conn.close()
+        return {"ok": False, "reason": "nothing_to_redo"}
+
+    record = dict(row)
+    before = json.loads(record["before_state"])
+    after = json.loads(record["after_state"])
+
+    all_ids = set()
+    for e in before:
+        all_ids.add(e["id"])
+    for e in after:
+        all_ids.add(e["id"])
+
+    _restore_entries(conn, after, all_ids)
+    conn.execute("UPDATE undo_log SET undone = 0 WHERE id = ?", (record["id"],))
+    conn.commit()
+    conn.close()
+    return {"ok": True, "action_type": record["action_type"]}
 
 
 # --- Imputation accounts ---
@@ -112,23 +235,21 @@ def delete_account(db_path, account_id):
 
 # --- Entries ---
 
+_ENTRY_JOIN_QUERY = """SELECT e.*, a.number AS account_number, a.description AS account_description, a.project AS account_project
+   FROM entries e
+   LEFT JOIN imputation_accounts a ON e.imputation_account_id = a.id"""
+
+
 def list_entries(db_path, date_from=None, date_to=None):
     conn = get_connection(db_path)
     if date_from and date_to:
         rows = conn.execute(
-            """SELECT e.*, a.number AS account_number, a.description AS account_description, a.project AS account_project
-               FROM entries e
-               LEFT JOIN imputation_accounts a ON e.imputation_account_id = a.id
-               WHERE e.date >= ? AND e.date <= ?
-               ORDER BY e.date DESC, e.id""",
+            _ENTRY_JOIN_QUERY + " WHERE e.date >= ? AND e.date <= ? ORDER BY e.date DESC, e.id",
             (date_from, date_to),
         ).fetchall()
     else:
         rows = conn.execute(
-            """SELECT e.*, a.number AS account_number, a.description AS account_description, a.project AS account_project
-               FROM entries e
-               LEFT JOIN imputation_accounts a ON e.imputation_account_id = a.id
-               ORDER BY e.date DESC, e.id"""
+            _ENTRY_JOIN_QUERY + " ORDER BY e.date DESC, e.id"
         ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
@@ -153,14 +274,10 @@ def create_entry(db_path, data):
         ),
     )
     entry_id = cur.lastrowid
+    after = _snapshot_entries(conn, [entry_id])
+    _record_undo(conn, "create_entry", [], after)
     conn.commit()
-    row = conn.execute(
-        """SELECT e.*, a.number AS account_number, a.description AS account_description, a.project AS account_project
-           FROM entries e
-           LEFT JOIN imputation_accounts a ON e.imputation_account_id = a.id
-           WHERE e.id = ?""",
-        (entry_id,),
-    ).fetchone()
+    row = conn.execute(_ENTRY_JOIN_QUERY + " WHERE e.id = ?", (entry_id,)).fetchone()
     conn.close()
     return dict(row)
 
@@ -176,17 +293,40 @@ def update_entry(db_path, entry_id, data):
     if not updates:
         conn.close()
         return None
+
+    # Determine affected entries (for undo snapshot)
+    row = conn.execute("SELECT group_id FROM entries WHERE id = ?", (entry_id,)).fetchone()
+    if not row:
+        conn.close()
+        return None
+    group_id = row["group_id"]
+    shared_updates = {k: v for k, v in updates.items() if k in SHARED_FIELDS}
+
+    affected_ids = {entry_id}
+    if group_id and shared_updates:
+        group_rows = conn.execute("SELECT id FROM entries WHERE group_id = ?", (group_id,)).fetchall()
+        affected_ids = {r["id"] for r in group_rows}
+
+    # Snapshot BEFORE
+    before = _snapshot_entries(conn, list(affected_ids))
+
+    # Update the target entry
     set_clause = ", ".join(f"{k} = ?" for k in updates)
     values = list(updates.values()) + [entry_id]
     conn.execute(f"UPDATE entries SET {set_clause} WHERE id = ?", values)
+
+    # Propagate shared fields to group members
+    if group_id and shared_updates:
+        set_clause2 = ", ".join(f"{k} = ?" for k in shared_updates)
+        values2 = list(shared_updates.values()) + [group_id]
+        conn.execute(f"UPDATE entries SET {set_clause2} WHERE group_id = ?", values2)
+
+    # Snapshot AFTER
+    after = _snapshot_entries(conn, list(affected_ids))
+    _record_undo(conn, "update_entry", before, after)
     conn.commit()
-    row = conn.execute(
-        """SELECT e.*, a.number AS account_number, a.description AS account_description, a.project AS account_project
-           FROM entries e
-           LEFT JOIN imputation_accounts a ON e.imputation_account_id = a.id
-           WHERE e.id = ?""",
-        (entry_id,),
-    ).fetchone()
+
+    row = conn.execute(_ENTRY_JOIN_QUERY + " WHERE e.id = ?", (entry_id,)).fetchone()
     conn.close()
     return dict(row) if row else None
 
@@ -198,6 +338,13 @@ def duplicate_entry(db_path, entry_id, target_date, link=False):
         conn.close()
         return None
     src = dict(row)
+
+    # Before snapshot: source entry if link will modify it
+    before_ids = []
+    if link and not src["group_id"]:
+        before_ids = [entry_id]
+    before = _snapshot_entries(conn, before_ids)
+
     group_id = None
     if link:
         if src["group_id"]:
@@ -223,25 +370,57 @@ def duplicate_entry(db_path, entry_id, target_date, link=False):
         ),
     )
     new_id = cur.lastrowid
+
+    # After snapshot: new entry + source if modified
+    after_ids = [new_id]
+    if link and not src["group_id"]:
+        after_ids.append(entry_id)
+    after = _snapshot_entries(conn, after_ids)
+
+    action_type = "duplicate_link_entry" if link else "duplicate_entry"
+    _record_undo(conn, action_type, before, after)
     conn.commit()
-    new_row = conn.execute(
-        """SELECT e.*, a.number AS account_number, a.description AS account_description, a.project AS account_project
-           FROM entries e
-           LEFT JOIN imputation_accounts a ON e.imputation_account_id = a.id
-           WHERE e.id = ?""",
-        (new_id,),
-    ).fetchone()
+
+    new_row = conn.execute(_ENTRY_JOIN_QUERY + " WHERE e.id = ?", (new_id,)).fetchone()
     conn.close()
     return dict(new_row)
 
 
 def delete_entry(db_path, entry_id):
     conn = get_connection(db_path)
-    # Check if entry is in a group; if so, clean up group after deletion
-    row = conn.execute("SELECT group_id FROM entries WHERE id = ?", (entry_id,)).fetchone()
+    row = conn.execute("SELECT * FROM entries WHERE id = ?", (entry_id,)).fetchone()
+    if not row:
+        conn.close()
+        return
+
+    entry = dict(row)
+    group_id = entry.get("group_id")
+
+    # Determine all affected entries
+    affected_ids = [entry_id]
+    cleanup_target_id = None
+    if group_id:
+        remaining = conn.execute(
+            "SELECT id FROM entries WHERE group_id = ? AND id != ?",
+            (group_id, entry_id),
+        ).fetchall()
+        if len(remaining) == 1:
+            cleanup_target_id = remaining[0]["id"]
+            affected_ids.append(cleanup_target_id)
+
+    # Snapshot BEFORE
+    before = _snapshot_entries(conn, affected_ids)
+
+    # Delete
     conn.execute("DELETE FROM entries WHERE id = ?", (entry_id,))
-    if row and row["group_id"]:
-        _cleanup_group(conn, row["group_id"])
+    if group_id:
+        _cleanup_group(conn, group_id)
+
+    # Snapshot AFTER (only cleanup target if it exists)
+    after_ids = [cleanup_target_id] if cleanup_target_id else []
+    after = _snapshot_entries(conn, after_ids)
+
+    _record_undo(conn, "delete_entry", before, after)
     conn.commit()
     conn.close()
 
@@ -263,11 +442,7 @@ SHARED_FIELDS = {"description", "ado_workitem", "ado_pr", "imputation_account_id
 def get_group_entries(db_path, group_id):
     conn = get_connection(db_path)
     rows = conn.execute(
-        """SELECT e.*, a.number AS account_number, a.description AS account_description, a.project AS account_project
-           FROM entries e
-           LEFT JOIN imputation_accounts a ON e.imputation_account_id = a.id
-           WHERE e.group_id = ?
-           ORDER BY e.date DESC, e.id""",
+        _ENTRY_JOIN_QUERY + " WHERE e.group_id = ? ORDER BY e.date DESC, e.id",
         (group_id,),
     ).fetchall()
     conn.close()
@@ -296,8 +471,25 @@ def ungroup_entry(db_path, entry_id):
         conn.close()
         return
     group_id = row["group_id"]
+
+    # Determine affected entries
+    affected_ids = [entry_id]
+    remaining = conn.execute(
+        "SELECT id FROM entries WHERE group_id = ? AND id != ?",
+        (group_id, entry_id),
+    ).fetchall()
+    if len(remaining) == 1:
+        affected_ids.append(remaining[0]["id"])
+
+    # Snapshot BEFORE
+    before = _snapshot_entries(conn, affected_ids)
+
     conn.execute("UPDATE entries SET group_id = NULL WHERE id = ?", (entry_id,))
     _cleanup_group(conn, group_id)
+
+    # Snapshot AFTER
+    after = _snapshot_entries(conn, affected_ids)
+    _record_undo(conn, "ungroup_entry", before, after)
     conn.commit()
     conn.close()
 
@@ -322,6 +514,20 @@ def link_entries(db_path, entry_id, target_entry_id, resolution=None):
     else:
         group_id = str(uuid.uuid4())
 
+    # Collect ALL affected entry IDs
+    affected_ids = {entry_id, target_entry_id}
+    if tgt["group_id"]:
+        rows = conn.execute("SELECT id FROM entries WHERE group_id = ?", (tgt["group_id"],)).fetchall()
+        for r in rows:
+            affected_ids.add(r["id"])
+    if src["group_id"]:
+        rows = conn.execute("SELECT id FROM entries WHERE group_id = ?", (src["group_id"],)).fetchall()
+        for r in rows:
+            affected_ids.add(r["id"])
+
+    # Snapshot BEFORE
+    before = _snapshot_entries(conn, list(affected_ids))
+
     # Apply resolution to determine shared field values
     resolved = {}
     if resolution:
@@ -329,7 +535,6 @@ def link_entries(db_path, entry_id, target_entry_id, resolution=None):
             if field in SHARED_FIELDS:
                 resolved[field] = value
     else:
-        # Default: use target's values for shared fields
         for field in SHARED_FIELDS:
             resolved[field] = tgt[field]
 
@@ -346,16 +551,13 @@ def link_entries(db_path, entry_id, target_entry_id, resolution=None):
         values = list(resolved.values()) + [group_id]
         conn.execute(f"UPDATE entries SET {set_clause} WHERE group_id = ?", values)
 
+    # Snapshot AFTER
+    after = _snapshot_entries(conn, list(affected_ids))
+    _record_undo(conn, "link_entries", before, after)
     conn.commit()
 
     # Return the updated entry
-    row = conn.execute(
-        """SELECT e.*, a.number AS account_number, a.description AS account_description, a.project AS account_project
-           FROM entries e
-           LEFT JOIN imputation_accounts a ON e.imputation_account_id = a.id
-           WHERE e.id = ?""",
-        (entry_id,),
-    ).fetchone()
+    row = conn.execute(_ENTRY_JOIN_QUERY + " WHERE e.id = ?", (entry_id,)).fetchone()
     conn.close()
     return dict(row)
 
@@ -377,11 +579,7 @@ def suggest_groups(db_path, entry_id):
         params.append(src["group_id"])
 
     rows = conn.execute(
-        f"""SELECT e.*, a.number AS account_number, a.description AS account_description, a.project AS account_project
-            FROM entries e
-            LEFT JOIN imputation_accounts a ON e.imputation_account_id = a.id
-            WHERE e.id != ?{where_extra}
-            ORDER BY e.date DESC, e.id""",
+        _ENTRY_JOIN_QUERY + f" WHERE e.id != ?{where_extra} ORDER BY e.date DESC, e.id",
         params,
     ).fetchall()
     conn.close()
@@ -403,7 +601,7 @@ def suggest_groups(db_path, entry_id):
         if entry["imputation_account_id"] and entry["imputation_account_id"] == src["imputation_account_id"]:
             s += 2
         if entry["group_id"]:
-            s += 1  # Slight preference for already-grouped entries
+            s += 1
         return s
 
     candidates.sort(key=lambda e: (-score(e), e["date"]))

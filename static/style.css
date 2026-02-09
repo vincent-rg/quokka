@@ -447,3 +447,24 @@ td select { padding: 1px 2px; }
     color: #fff;
     border-color: var(--accent);
 }
+
+/* Undo/Redo toast */
+.undo-toast {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: #333;
+    color: #fff;
+    padding: 8px 20px;
+    border-radius: 4px;
+    font-size: 13px;
+    opacity: 0;
+    transition: opacity 0.3s, transform 0.3s;
+    z-index: 300;
+    pointer-events: none;
+}
+.undo-toast.visible {
+    opacity: 0.9;
+    transform: translateX(-50%) translateY(0);
+}

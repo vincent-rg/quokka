@@ -131,6 +131,14 @@ class QuokkaHandler(BaseHTTPRequestHandler):
             self._handle_create_entry()
             return
 
+        if path == "/api/undo":
+            self._handle_undo()
+            return
+
+        if path == "/api/redo":
+            self._handle_redo()
+            return
+
         # Account routes
         m = re.match(r"^/api/accounts/(\d+)/delete$", path)
         if m:
@@ -171,11 +179,6 @@ class QuokkaHandler(BaseHTTPRequestHandler):
         if entry is None:
             self._send_error(404, "Entry not found")
             return
-        # Propagate shared fields to group members
-        if entry.get("group_id"):
-            shared_updates = {k: v for k, v in data.items() if k in db.SHARED_FIELDS}
-            if shared_updates:
-                db.update_group_shared(DB_PATH, entry["group_id"], shared_updates)
         self._send_json(entry)
 
     def _handle_duplicate_entry(self, entry_id):
@@ -194,6 +197,16 @@ class QuokkaHandler(BaseHTTPRequestHandler):
     def _handle_delete_entry(self, entry_id):
         db.delete_entry(DB_PATH, entry_id)
         self._send_json({"ok": True})
+
+    # --- Undo/Redo handlers ---
+
+    def _handle_undo(self):
+        result = db.perform_undo(DB_PATH)
+        self._send_json(result)
+
+    def _handle_redo(self):
+        result = db.perform_redo(DB_PATH)
+        self._send_json(result)
 
     # --- Grouping handlers ---
 

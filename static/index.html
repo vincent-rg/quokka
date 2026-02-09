@@ -50,6 +50,26 @@
         </div>
     </div>
 
+    <!-- Grouping Modal -->
+    <div id="grouping-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Link entry</h2>
+                <button class="modal-close" id="btn-close-grouping">&times;</button>
+            </div>
+            <input type="text" class="suggestion-filter" id="grouping-filter" placeholder="Filter by description, WI, PR...">
+            <div class="suggestion-list" id="grouping-suggestions"></div>
+            <div class="conflict-section hidden" id="conflict-section">
+                <h3>Resolve field differences</h3>
+                <div id="conflict-fields"></div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn-apply" id="btn-apply-link">Apply</button>
+                <button id="btn-cancel-link">Cancel</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Notes popup -->
     <div id="notes-popup" class="popup hidden">
         <textarea id="notes-textarea" rows="5"></textarea>

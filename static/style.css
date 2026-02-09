@@ -112,10 +112,9 @@ main { padding: 0 12px 40px; }
 }
 .day-group td:last-child { border-right: none; }
 .day-group tr:last-child td { border-bottom: none; }
-.day-group tr:hover td { background: var(--accent-light); }
-.day-group tr.zero-duration td { background: #fff4e6; }
-.day-group tr.zero-duration:hover td { background: #ffe8cc; }
+.day-group tr:hover td { background: #f0f0f0; }
 .day-group tr.dragging { opacity: 0.4; }
+.day-group td .zero-warn { color: #c77800; }
 
 /* Column widths */
 .col-dur { width: 70px; }
@@ -125,6 +124,7 @@ main { padding: 0 12px 40px; }
 .col-acct { width: 130px; }
 .col-idur { width: 70px; }
 .col-notes { width: 120px; }
+.col-link { width: 28px; text-align: center; }
 .col-act { width: 50px; text-align: right; }
 
 /* Inline editing cells */
@@ -338,6 +338,111 @@ td select { padding: 1px 2px; }
     background: var(--surface);
 }
 .popup-actions button:first-child {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+}
+
+/* Group link button */
+.btn-link {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 14px;
+    padding: 0;
+    line-height: 1;
+    opacity: 0.7;
+}
+.btn-link:hover { opacity: 1; }
+.btn-link.faint { opacity: 0.25; font-size: 12px; }
+.btn-link.faint:hover { opacity: 0.6; }
+
+/* Group highlight — color applied inline per group */
+
+/* Group info popup */
+.group-popup {
+    position: fixed;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 8px 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    z-index: 100;
+    min-width: 160px;
+}
+.group-popup .group-total { font-weight: 600; margin-bottom: 6px; font-size: 13px; }
+.group-popup button {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 4px 0;
+    border: none;
+    background: none;
+    font-size: 12px;
+    cursor: pointer;
+    color: var(--danger);
+}
+.group-popup button:hover { text-decoration: underline; }
+
+/* Grouping modal */
+#grouping-modal .suggestion-filter {
+    width: 100%;
+    border: 1px solid var(--border);
+    padding: 6px 8px;
+    font-size: 13px;
+    font-family: inherit;
+    border-radius: 3px;
+    margin-bottom: 8px;
+}
+#grouping-modal .suggestion-list {
+    max-height: 250px;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    margin-bottom: 10px;
+}
+#grouping-modal .suggestion-item {
+    padding: 6px 10px;
+    cursor: pointer;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+#grouping-modal .suggestion-item:last-child { border-bottom: none; }
+#grouping-modal .suggestion-item:hover { background: var(--accent-light); }
+#grouping-modal .suggestion-item.selected { background: var(--accent-light); outline: 2px solid var(--accent); }
+#grouping-modal .suggestion-item .s-date { color: var(--muted); min-width: 80px; }
+#grouping-modal .suggestion-item .s-desc { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#grouping-modal .suggestion-item .s-wi { color: var(--muted); min-width: 50px; }
+#grouping-modal .suggestion-item .s-group { color: var(--accent); font-size: 10px; }
+#grouping-modal .conflict-section { margin-top: 10px; }
+#grouping-modal .conflict-section h3 { font-size: 12px; margin-bottom: 6px; }
+#grouping-modal .conflict-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 3px 0;
+    font-size: 12px;
+}
+#grouping-modal .conflict-row label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+#grouping-modal .conflict-row .field-name { min-width: 100px; font-weight: 600; color: var(--muted); }
+#grouping-modal .modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    margin-top: 12px;
+}
+#grouping-modal .modal-actions button {
+    padding: 5px 14px;
+    font-size: 12px;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    cursor: pointer;
+    background: var(--surface);
+}
+#grouping-modal .modal-actions .btn-apply {
     background: var(--accent);
     color: #fff;
     border-color: var(--accent);

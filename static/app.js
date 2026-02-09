@@ -5,7 +5,26 @@
     var entries = [];
     var accounts = [];
     var DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-    var COL_COUNT = 8; // number of columns in entry tables
+    var COL_COUNT = 9; // number of columns in entry tables
+
+    // Group colors: 8 distinct hues for left-border + highlight
+    var GROUP_COLORS = [
+        "#e74c3c", "#3498db", "#2ecc71", "#f39c12",
+        "#9b59b6", "#1abc9c", "#e67e22", "#e91e63"
+    ];
+    var GROUP_COLORS_LIGHT = [
+        "#fde8e8", "#e8f4fd", "#e8faf0", "#fef3e0",
+        "#f3e8fd", "#e0faf5", "#fdeee0", "#fde0eb"
+    ];
+
+    function groupColorIndex(groupId) {
+        var hash = 0;
+        for (var i = 0; i < groupId.length; i++) {
+            hash = ((hash << 5) - hash) + groupId.charCodeAt(i);
+            hash = hash & hash;
+        }
+        return Math.abs(hash) % GROUP_COLORS.length;
+    }
 
     // --- Helpers ---
     function fmtDate(d) {
@@ -147,6 +166,7 @@
             ["col-acct", "Account"],
             ["col-idur", "Imp. Dur."],
             ["col-notes", "Notes"],
+            ["col-link", ""],
             ["col-act", ""],
         ];
         for (var c = 0; c < cols.length; c++) {
@@ -219,6 +239,14 @@
         };
         menu.appendChild(dupBtn);
 
+        var dupLinkBtn = document.createElement("button");
+        dupLinkBtn.textContent = "Duplicate & link";
+        dupLinkBtn.onclick = function () {
+            api("POST", "/api/entries/" + entryId + "/duplicate", { date: targetDate, link: true }).then(loadEntries);
+            closeDropMenu();
+        };
+        menu.appendChild(dupLinkBtn);
+
         var hr = document.createElement("hr");
         menu.appendChild(hr);
 
@@ -257,7 +285,11 @@
         var tr = document.createElement("tr");
         tr.dataset.id = entry.id;
         tr.draggable = true;
-        if (!entry.duration) tr.classList.add("zero-duration");
+        if (entry.group_id) {
+            tr.dataset.group = entry.group_id;
+            var ci = groupColorIndex(entry.group_id);
+            tr.style.borderLeft = "3px solid " + GROUP_COLORS[ci];
+        }
 
         // Drag start
         tr.addEventListener("dragstart", function (ev) {
@@ -272,8 +304,10 @@
             for (var i = 0; i < groups.length; i++) groups[i].classList.remove("drag-over");
         });
 
-        // Duration
-        addCell(tr, entry, "duration", fmtDuration(entry.duration), "duration-select");
+        // Duration (warning icon for 0:00)
+        var durDisplay = fmtDuration(entry.duration);
+        if (!entry.duration) durDisplay = "\u26A0 0:00";
+        addCell(tr, entry, "duration", durDisplay, "duration-select", !entry.duration ? "zero-warn" : null);
         // Description
         addCell(tr, entry, "description", entry.description || "", "text");
         // ADO Work Item
@@ -287,6 +321,28 @@
         addCell(tr, entry, "imputation_duration", fmtDuration(entry.imputation_duration), "duration-select");
         // Notes
         addCell(tr, entry, "notes", entry.notes ? "\u270E " + truncate(entry.notes, 15) : "", "notes");
+        // Link
+        var linkTd = document.createElement("td");
+        var linkBtn = document.createElement("button");
+        linkBtn.className = "btn-link";
+        if (entry.group_id) {
+            linkBtn.textContent = "\uD83D\uDD17"; // 🔗
+            linkBtn.title = "Grouped - click for details";
+            linkBtn.onclick = function (ev) {
+                ev.stopPropagation();
+                openGroupPopup(linkTd, entry);
+            };
+        } else {
+            linkBtn.textContent = "+";
+            linkBtn.className = "btn-link faint";
+            linkBtn.title = "Link to another entry";
+            linkBtn.onclick = function (ev) {
+                ev.stopPropagation();
+                openGroupingModal(entry);
+            };
+        }
+        linkTd.appendChild(linkBtn);
+        tr.appendChild(linkTd);
         // Actions
         var actTd = document.createElement("td");
         var actions = document.createElement("span");
@@ -359,10 +415,11 @@
         return s.length > n ? s.slice(0, n) + "\u2026" : s;
     }
 
-    function addCell(tr, entry, field, displayText, inputType) {
+    function addCell(tr, entry, field, displayText, inputType, extraClass) {
         var td = document.createElement("td");
         var display = document.createElement("span");
         display.className = "cell-display";
+        if (extraClass) display.classList.add(extraClass);
         if (!displayText && displayText !== 0) {
             display.classList.add("placeholder");
             display.textContent = "\u00b7\u00b7\u00b7";
@@ -434,7 +491,7 @@
             var data = {};
 
             if (inputType === "duration-select") {
-                data[field] = val ? parseInt(val) : null;
+                data[field] = val ? parseInt(val) : (field === "duration" ? 0 : null);
             } else if (inputType === "account-select") {
                 data[field] = val ? parseInt(val) : null;
             } else {
@@ -621,6 +678,269 @@
         api("POST", "/api/accounts", { number: "NEW", description: "" }).then(renderAccounts);
     }
 
+    // --- Group hover cross-highlight ---
+    document.getElementById("days-container").addEventListener("mouseenter", function (ev) {
+        var tr = ev.target.closest("tr[data-group]");
+        if (!tr) return;
+        var gid = tr.dataset.group;
+        var lightColor = GROUP_COLORS_LIGHT[groupColorIndex(gid)];
+        var rows = document.querySelectorAll('tr[data-group="' + gid + '"]');
+        for (var i = 0; i < rows.length; i++) {
+            var tds = rows[i].querySelectorAll("td");
+            for (var j = 0; j < tds.length; j++) tds[j].style.background = lightColor;
+        }
+    }, true);
+
+    document.getElementById("days-container").addEventListener("mouseleave", function (ev) {
+        var tr = ev.target.closest("tr[data-group]");
+        if (!tr) return;
+        var gid = tr.dataset.group;
+        var rows = document.querySelectorAll('tr[data-group="' + gid + '"]');
+        for (var i = 0; i < rows.length; i++) {
+            var tds = rows[i].querySelectorAll("td");
+            for (var j = 0; j < tds.length; j++) tds[j].style.background = "";
+        }
+    }, true);
+
+    // --- Group info popup (ungroup) ---
+    function openGroupPopup(anchor, entry) {
+        closeGroupPopup();
+        var groupEntries = entries.filter(function (e) { return e.group_id === entry.group_id; });
+        var total = 0;
+        for (var i = 0; i < groupEntries.length; i++) total += groupEntries[i].duration || 0;
+
+        var popup = document.createElement("div");
+        popup.className = "group-popup";
+        popup.id = "group-popup-active";
+
+        var totalDiv = document.createElement("div");
+        totalDiv.className = "group-total";
+        totalDiv.textContent = "Group total: " + fmtDuration(total) + " (" + groupEntries.length + " entries)";
+        popup.appendChild(totalDiv);
+
+        var ungroupBtn = document.createElement("button");
+        ungroupBtn.textContent = "Ungroup this entry";
+        ungroupBtn.onclick = function () {
+            api("POST", "/api/entries/" + entry.id + "/ungroup").then(function () {
+                closeGroupPopup();
+                loadEntries();
+            });
+        };
+        popup.appendChild(ungroupBtn);
+
+        document.body.appendChild(popup);
+
+        var rect = anchor.getBoundingClientRect();
+        popup.style.left = Math.min(rect.left, window.innerWidth - 180) + "px";
+        popup.style.top = (rect.bottom + 4) + "px";
+
+        setTimeout(function () {
+            document.addEventListener("mousedown", onGroupPopupOutside);
+        }, 0);
+    }
+
+    function onGroupPopupOutside(ev) {
+        var popup = document.getElementById("group-popup-active");
+        if (popup && !popup.contains(ev.target)) closeGroupPopup();
+    }
+
+    function closeGroupPopup() {
+        var popup = document.getElementById("group-popup-active");
+        if (popup) popup.remove();
+        document.removeEventListener("mousedown", onGroupPopupOutside);
+    }
+
+    // --- Grouping modal ---
+    var groupingSourceEntry = null;
+    var groupingSuggestions = [];
+    var groupingSelectedId = null;
+
+    function openGroupingModal(entry) {
+        groupingSourceEntry = entry;
+        groupingSelectedId = null;
+        document.getElementById("grouping-modal").classList.remove("hidden");
+        document.getElementById("grouping-filter").value = "";
+        document.getElementById("conflict-section").classList.add("hidden");
+        document.getElementById("grouping-suggestions").innerHTML = '<div style="padding:10px;color:var(--muted)">Loading...</div>';
+
+        api("GET", "/api/entries/" + entry.id + "/suggest-links").then(function (data) {
+            groupingSuggestions = data;
+            renderGroupingSuggestions("");
+        });
+    }
+
+    function closeGroupingModal() {
+        document.getElementById("grouping-modal").classList.add("hidden");
+        groupingSourceEntry = null;
+        groupingSuggestions = [];
+        groupingSelectedId = null;
+    }
+
+    function renderGroupingSuggestions(filter) {
+        var container = document.getElementById("grouping-suggestions");
+        container.innerHTML = "";
+        var lower = filter.toLowerCase();
+
+        var filtered = groupingSuggestions.filter(function (e) {
+            if (!lower) return true;
+            return (e.description || "").toLowerCase().indexOf(lower) >= 0
+                || (e.ado_workitem || "").toLowerCase().indexOf(lower) >= 0
+                || (e.ado_pr || "").toLowerCase().indexOf(lower) >= 0
+                || (e.date || "").indexOf(lower) >= 0;
+        });
+
+        if (filtered.length === 0) {
+            container.innerHTML = '<div style="padding:10px;color:var(--muted)">No matches</div>';
+            return;
+        }
+
+        for (var i = 0; i < Math.min(filtered.length, 50); i++) {
+            var e = filtered[i];
+            var item = document.createElement("div");
+            item.className = "suggestion-item";
+            if (e.id === groupingSelectedId) item.classList.add("selected");
+            item.dataset.entryId = e.id;
+
+            var dateSpan = document.createElement("span");
+            dateSpan.className = "s-date";
+            dateSpan.textContent = e.date;
+            item.appendChild(dateSpan);
+
+            var descSpan = document.createElement("span");
+            descSpan.className = "s-desc";
+            descSpan.textContent = e.description || "(no description)";
+            item.appendChild(descSpan);
+
+            if (e.ado_workitem) {
+                var wiSpan = document.createElement("span");
+                wiSpan.className = "s-wi";
+                wiSpan.textContent = "WI:" + e.ado_workitem;
+                item.appendChild(wiSpan);
+            }
+
+            if (e.group_id) {
+                var gSpan = document.createElement("span");
+                gSpan.className = "s-group";
+                gSpan.textContent = "\uD83D\uDD17 grouped";
+                item.appendChild(gSpan);
+            }
+
+            (function (entry) {
+                item.onclick = function () {
+                    groupingSelectedId = entry.id;
+                    renderGroupingSuggestions(document.getElementById("grouping-filter").value);
+                    showConflictResolution(entry);
+                };
+            })(e);
+
+            container.appendChild(item);
+        }
+    }
+
+    var SHARED_FIELD_LABELS = {
+        description: "Description",
+        ado_workitem: "Work Item",
+        ado_pr: "PR",
+        imputation_account_id: "Account",
+        imputation_duration: "Imp. Duration"
+    };
+
+    function showConflictResolution(target) {
+        var section = document.getElementById("conflict-section");
+        var fieldsDiv = document.getElementById("conflict-fields");
+        fieldsDiv.innerHTML = "";
+        var hasDiffs = false;
+
+        var sharedFields = ["description", "ado_workitem", "ado_pr", "imputation_account_id", "imputation_duration"];
+        for (var i = 0; i < sharedFields.length; i++) {
+            var field = sharedFields[i];
+            var srcVal = groupingSourceEntry[field];
+            var tgtVal = target[field];
+
+            // Normalize nulls
+            if (srcVal === null || srcVal === undefined) srcVal = "";
+            if (tgtVal === null || tgtVal === undefined) tgtVal = "";
+            if (srcVal == tgtVal) continue;
+
+            hasDiffs = true;
+            var row = document.createElement("div");
+            row.className = "conflict-row";
+
+            var nameSpan = document.createElement("span");
+            nameSpan.className = "field-name";
+            nameSpan.textContent = SHARED_FIELD_LABELS[field] || field;
+            row.appendChild(nameSpan);
+
+            var srcDisplay = formatFieldValue(field, srcVal);
+            var tgtDisplay = formatFieldValue(field, tgtVal);
+
+            // Radio: target value (default)
+            var radioName = "conflict-" + field;
+            var labelTgt = document.createElement("label");
+            var radioTgt = document.createElement("input");
+            radioTgt.type = "radio";
+            radioTgt.name = radioName;
+            radioTgt.value = "target";
+            radioTgt.checked = true;
+            radioTgt.dataset.field = field;
+            radioTgt.dataset.val = JSON.stringify(tgtVal);
+            labelTgt.appendChild(radioTgt);
+            labelTgt.appendChild(document.createTextNode(" " + (tgtDisplay || "(empty)")));
+            row.appendChild(labelTgt);
+
+            // Radio: source value
+            var labelSrc = document.createElement("label");
+            var radioSrc = document.createElement("input");
+            radioSrc.type = "radio";
+            radioSrc.name = radioName;
+            radioSrc.value = "source";
+            radioSrc.dataset.field = field;
+            radioSrc.dataset.val = JSON.stringify(srcVal);
+            labelSrc.appendChild(radioSrc);
+            labelSrc.appendChild(document.createTextNode(" " + (srcDisplay || "(empty)")));
+            row.appendChild(labelSrc);
+
+            fieldsDiv.appendChild(row);
+        }
+
+        if (hasDiffs) {
+            section.classList.remove("hidden");
+        } else {
+            section.classList.add("hidden");
+        }
+    }
+
+    function formatFieldValue(field, val) {
+        if (field === "imputation_duration" && val) return fmtDuration(val);
+        if (field === "imputation_account_id" && val) {
+            for (var i = 0; i < accounts.length; i++) {
+                if (accounts[i].id == val) return acctLabel(accounts[i]);
+            }
+            return String(val);
+        }
+        return String(val || "");
+    }
+
+    function applyGroupingLink() {
+        if (!groupingSelectedId || !groupingSourceEntry) return;
+
+        // Gather resolution from radio buttons
+        var resolution = {};
+        var radios = document.querySelectorAll("#conflict-fields input[type=radio]:checked");
+        for (var i = 0; i < radios.length; i++) {
+            var r = radios[i];
+            resolution[r.dataset.field] = JSON.parse(r.dataset.val);
+        }
+
+        api("POST", "/api/entries/" + groupingSourceEntry.id + "/link", {
+            target_entry_id: groupingSelectedId,
+            resolution: resolution
+        }).then(function () {
+            closeGroupingModal();
+            loadEntries();
+        });
+    }
+
     // --- Event listeners ---
     document.getElementById("btn-today").onclick = scrollToToday;
     document.getElementById("btn-add").onclick = addEntryToday;
@@ -628,6 +948,12 @@
     document.getElementById("btn-accounts").onclick = openAccountsModal;
     document.getElementById("btn-close-accounts").onclick = closeAccountsModal;
     document.getElementById("btn-add-account").onclick = addAccount;
+    document.getElementById("btn-close-grouping").onclick = closeGroupingModal;
+    document.getElementById("btn-cancel-link").onclick = closeGroupingModal;
+    document.getElementById("btn-apply-link").onclick = applyGroupingLink;
+    document.getElementById("grouping-filter").oninput = function () {
+        renderGroupingSuggestions(this.value);
+    };
 
     // Close notes popup on outside click
     document.addEventListener("click", function (ev) {
@@ -642,9 +968,12 @@
         }
     });
 
-    // Close modal on backdrop click
+    // Close modals on backdrop click
     document.getElementById("accounts-modal").onclick = function (ev) {
         if (ev.target === this) closeAccountsModal();
+    };
+    document.getElementById("grouping-modal").onclick = function (ev) {
+        if (ev.target === this) closeGroupingModal();
     };
 
     // --- Init ---

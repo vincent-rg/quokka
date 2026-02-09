@@ -92,7 +92,11 @@ class QuokkaHandler(BaseHTTPRequestHandler):
         elif path == "/api/accounts":
             self._handle_list_accounts()
         else:
-            self.send_error(404)
+            m = re.match(r"^/api/entries/(\d+)/suggest-links$", path)
+            if m:
+                self._handle_suggest_links(int(m.group(1)))
+            else:
+                self.send_error(404)
 
     def do_POST(self):
         path = urlparse(self.path).path
@@ -101,6 +105,16 @@ class QuokkaHandler(BaseHTTPRequestHandler):
         m = re.match(r"^/api/entries/(\d+)/duplicate$", path)
         if m:
             self._handle_duplicate_entry(int(m.group(1)))
+            return
+
+        m = re.match(r"^/api/entries/(\d+)/ungroup$", path)
+        if m:
+            self._handle_ungroup_entry(int(m.group(1)))
+            return
+
+        m = re.match(r"^/api/entries/(\d+)/link$", path)
+        if m:
+            self._handle_link_entry(int(m.group(1)))
             return
 
         m = re.match(r"^/api/entries/(\d+)/delete$", path)
@@ -157,6 +171,11 @@ class QuokkaHandler(BaseHTTPRequestHandler):
         if entry is None:
             self._send_error(404, "Entry not found")
             return
+        # Propagate shared fields to group members
+        if entry.get("group_id"):
+            shared_updates = {k: v for k, v in data.items() if k in db.SHARED_FIELDS}
+            if shared_updates:
+                db.update_group_shared(DB_PATH, entry["group_id"], shared_updates)
         self._send_json(entry)
 
     def _handle_duplicate_entry(self, entry_id):
@@ -165,7 +184,8 @@ class QuokkaHandler(BaseHTTPRequestHandler):
         if not target_date:
             self._send_error(400, "date is required")
             return
-        entry = db.duplicate_entry(DB_PATH, entry_id, target_date)
+        link = data.get("link", False)
+        entry = db.duplicate_entry(DB_PATH, entry_id, target_date, link=link)
         if entry is None:
             self._send_error(404, "Entry not found")
             return
@@ -174,6 +194,29 @@ class QuokkaHandler(BaseHTTPRequestHandler):
     def _handle_delete_entry(self, entry_id):
         db.delete_entry(DB_PATH, entry_id)
         self._send_json({"ok": True})
+
+    # --- Grouping handlers ---
+
+    def _handle_ungroup_entry(self, entry_id):
+        db.ungroup_entry(DB_PATH, entry_id)
+        self._send_json({"ok": True})
+
+    def _handle_link_entry(self, entry_id):
+        data = self._read_body()
+        target_entry_id = data.get("target_entry_id")
+        if not target_entry_id:
+            self._send_error(400, "target_entry_id is required")
+            return
+        resolution = data.get("resolution")
+        entry = db.link_entries(DB_PATH, entry_id, target_entry_id, resolution)
+        if entry is None:
+            self._send_error(404, "Entry not found")
+            return
+        self._send_json(entry)
+
+    def _handle_suggest_links(self, entry_id):
+        suggestions = db.suggest_groups(DB_PATH, entry_id)
+        self._send_json(suggestions)
 
     # --- Account handlers ---
 

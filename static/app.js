@@ -6,12 +6,23 @@
     var accounts = [];
     var DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
     var COL_COUNT = 9; // number of columns in entry tables
-    var colWidths = [70, 180, 70, 70, 130, 70, 120, 28, 50]; // initial column widths
+    var COL_DEFAULTS = [70, 180, 70, 70, 130, 70, 120, 28, 50];
+    var colWidths = (function () {
+        try {
+            var saved = JSON.parse(localStorage.getItem("colWidths"));
+            if (saved && saved.length === COL_DEFAULTS.length) return saved;
+        } catch (e) {}
+        return COL_DEFAULTS.slice();
+    })();
 
     function totalColWidth() {
         var s = 0;
         for (var i = 0; i < colWidths.length; i++) s += colWidths[i];
         return s;
+    }
+
+    function saveColWidths() {
+        localStorage.setItem("colWidths", JSON.stringify(colWidths));
     }
 
     // Group colors: 8 distinct hues for left-border + highlight
@@ -787,6 +798,7 @@
             resizing = false;
             document.body.style.cursor = "";
             document.body.style.userSelect = "";
+            saveColWidths();
         });
 
         // Double-click: expand column to fill page if table is narrower than viewport
@@ -803,6 +815,7 @@
             if (tw < available) {
                 colWidths[ci] = colWidths[ci] + (available - tw);
                 applyColWidths();
+                saveColWidths();
             }
         });
     })();

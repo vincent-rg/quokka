@@ -120,8 +120,19 @@
         var totalSpan = document.createElement("span");
         totalSpan.className = "day-total";
         totalSpan.textContent = fmtDuration(dayTotal);
+        var rightSpan = document.createElement("span");
+        rightSpan.className = "day-right";
+        var addDayBtn = document.createElement("button");
+        addDayBtn.className = "btn-add-day";
+        addDayBtn.textContent = "+";
+        addDayBtn.title = "Add entry this day";
+        addDayBtn.onclick = function () {
+            api("POST", "/api/entries", { date: group.date, duration: 60 }).then(loadEntries);
+        };
+        rightSpan.appendChild(addDayBtn);
+        rightSpan.appendChild(totalSpan);
         hdr.appendChild(dateSpan);
-        hdr.appendChild(totalSpan);
+        hdr.appendChild(rightSpan);
         div.appendChild(hdr);
 
         // Table
@@ -298,10 +309,10 @@
         };
         actions.appendChild(dateBtn);
 
-        // Delete
+        // Delete (trash can)
         var delBtn = document.createElement("button");
         delBtn.className = "btn-row btn-delete";
-        delBtn.textContent = "\u00d7";
+        delBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h12M5.3 4V2.7a1.3 1.3 0 011.3-1.3h2.8a1.3 1.3 0 011.3 1.3V4M13 4v9.3a1.3 1.3 0 01-1.3 1.3H4.3A1.3 1.3 0 013 13.3V4"/></svg>';
         delBtn.title = "Delete";
         delBtn.onclick = function () {
             if (confirm("Delete this entry?")) {
@@ -507,11 +518,41 @@
     }
 
     // --- Add entry ---
-    function addEntry() {
+    function addEntryToday() {
         var today = fmtDate(new Date());
         api("POST", "/api/entries", { date: today, duration: 60 }).then(function () {
             loadEntries().then(scrollToToday);
         });
+    }
+
+    function addEntryForDate() {
+        var container = document.querySelector(".header-right");
+        var existing = container.querySelector(".header-date-picker");
+        if (existing) { existing.remove(); return; }
+        var input = document.createElement("input");
+        input.type = "date";
+        input.className = "header-date-picker";
+        input.value = fmtDate(new Date());
+        container.appendChild(input);
+        input.focus();
+
+        function done() {
+            var date = input.value;
+            input.remove();
+            if (date) {
+                api("POST", "/api/entries", { date: date, duration: 60 }).then(function () {
+                    loadEntries().then(function () {
+                        var group = document.querySelector('.day-group[data-date="' + date + '"]');
+                        if (group) group.scrollIntoView({ behavior: "smooth", block: "start" });
+                    });
+                });
+            }
+        }
+        input.onchange = done;
+        input.onblur = function () { setTimeout(function () { if (input.parentNode) input.remove(); }, 200); };
+        input.onkeydown = function (ev) {
+            if (ev.key === "Escape") input.remove();
+        };
     }
 
     // --- Accounts modal ---
@@ -581,7 +622,8 @@
 
     // --- Event listeners ---
     document.getElementById("btn-today").onclick = scrollToToday;
-    document.getElementById("btn-add").onclick = addEntry;
+    document.getElementById("btn-add").onclick = addEntryToday;
+    document.getElementById("btn-add-date").onclick = addEntryForDate;
     document.getElementById("btn-accounts").onclick = openAccountsModal;
     document.getElementById("btn-close-accounts").onclick = closeAccountsModal;
     document.getElementById("btn-add-account").onclick = addAccount;

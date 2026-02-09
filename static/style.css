@@ -27,6 +27,9 @@ header {
     padding: 6px 16px;
     background: var(--accent);
     color: #fff;
+    position: sticky;
+    top: 0;
+    z-index: 50;
 }
 .header-left { display: flex; align-items: center; gap: 8px; }
 .logo { width: 28px; height: 28px; }
@@ -69,7 +72,19 @@ main { padding: 0 12px 40px; }
     font-size: 12px;
 }
 .day-header .day-date { color: var(--text); }
+.day-header .day-right { display: flex; align-items: center; gap: 10px; }
 .day-header .day-total { color: var(--muted); font-weight: 400; }
+.day-header .btn-add-day {
+    background: none;
+    border: none;
+    color: var(--accent);
+    cursor: pointer;
+    font-size: 15px;
+    line-height: 1;
+    padding: 0 2px;
+    border-radius: 2px;
+}
+.day-header .btn-add-day:hover { background: rgba(0,0,0,0.06); }
 
 /* Entry table inside day group */
 .day-group table {
@@ -202,20 +217,19 @@ td select { padding: 1px 2px; }
 .table-footer {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-end;
     padding: 6px 0;
 }
-#btn-add {
-    background: var(--accent);
-    color: #fff;
-    border: none;
-    padding: 5px 14px;
-    border-radius: 3px;
-    cursor: pointer;
-    font-size: 12px;
-}
-#btn-add:hover { opacity: 0.9; }
 #total-label { font-weight: 600; font-size: 13px; }
+
+/* Header date picker for "add entry for another day" */
+.header-date-picker {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    z-index: 60;
+}
+.header-right { position: relative; }
 
 /* Modal */
 .modal {

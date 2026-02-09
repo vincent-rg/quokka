@@ -128,6 +128,14 @@ def _restore_entries(conn, target_state, all_entry_ids):
             conn.execute(f"INSERT INTO entries ({cols}) VALUES ({placeholders})", vals)
 
 
+def undo_status(db_path):
+    conn = get_connection(db_path)
+    can_undo = conn.execute("SELECT COUNT(*) FROM undo_log WHERE undone = 0").fetchone()[0] > 0
+    can_redo = conn.execute("SELECT COUNT(*) FROM undo_log WHERE undone = 1").fetchone()[0] > 0
+    conn.close()
+    return {"can_undo": can_undo, "can_redo": can_redo}
+
+
 def perform_undo(db_path):
     conn = get_connection(db_path)
     row = conn.execute(

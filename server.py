@@ -91,6 +91,8 @@ class QuokkaHandler(BaseHTTPRequestHandler):
             self._handle_list_entries(parsed)
         elif path == "/api/accounts":
             self._handle_list_accounts()
+        elif path == "/api/undo-status":
+            self._send_json(db.undo_status(DB_PATH))
         else:
             m = re.match(r"^/api/entries/(\d+)/suggest-links$", path)
             if m:

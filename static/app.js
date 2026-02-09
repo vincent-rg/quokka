@@ -8,6 +8,12 @@
     var COL_COUNT = 9; // number of columns in entry tables
     var colWidths = [70, 180, 70, 70, 130, 70, 120, 28, 50]; // initial column widths
 
+    function totalColWidth() {
+        var s = 0;
+        for (var i = 0; i < colWidths.length; i++) s += colWidths[i];
+        return s;
+    }
+
     // Group colors: 8 distinct hues for left-border + highlight
     var GROUP_COLORS = [
         "#e74c3c", "#3498db", "#2ecc71", "#f39c12",
@@ -82,6 +88,7 @@
             .then(function (data) {
                 entries = data;
                 renderDays();
+                updateUndoButtons();
             });
     }
 
@@ -158,6 +165,7 @@
         // Table
         var table = document.createElement("table");
         table.style.tableLayout = "fixed";
+        table.style.width = totalColWidth() + "px";
 
         // Colgroup for synced widths
         var colgroup = document.createElement("colgroup");
@@ -742,6 +750,11 @@
 
     // --- Column resize ---
     function applyColWidths() {
+        var w = totalColWidth() + "px";
+        var tables = document.querySelectorAll(".day-group table");
+        for (var t = 0; t < tables.length; t++) tables[t].style.width = w;
+        var headers = document.querySelectorAll(".day-group .day-header");
+        for (var h = 0; h < headers.length; h++) headers[h].style.minWidth = w;
         var allCols = document.querySelectorAll(".day-group colgroup col");
         for (var i = 0; i < allCols.length; i++) {
             allCols[i].style.width = colWidths[i % COL_COUNT] + "px";
@@ -774,6 +787,21 @@
             resizing = false;
             document.body.style.cursor = "";
             document.body.style.userSelect = "";
+        });
+
+        // Double-click: expand column to fill page if table is narrower than viewport
+        document.getElementById("days-container").addEventListener("dblclick", function (ev) {
+            if (!ev.target.classList.contains("col-resize")) return;
+            ev.preventDefault();
+            var ci = parseInt(ev.target.dataset.colIndex);
+            var table = ev.target.closest("table");
+            if (!table) return;
+            var pageWidth = document.querySelector("main").clientWidth;
+            var tableWidth = table.offsetWidth;
+            if (tableWidth < pageWidth) {
+                colWidths[ci] = colWidths[ci] + (pageWidth - tableWidth);
+                applyColWidths();
+            }
         });
     })();
 
@@ -1102,6 +1130,13 @@
             toast.classList.remove("visible");
             setTimeout(function () { toast.remove(); }, 300);
         }, 2000);
+    }
+
+    function updateUndoButtons() {
+        api("GET", "/api/undo-status").then(function (status) {
+            document.getElementById("btn-undo").disabled = !status.can_undo;
+            document.getElementById("btn-redo").disabled = !status.can_redo;
+        });
     }
 
     function doUndo() {

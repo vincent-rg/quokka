@@ -628,7 +628,9 @@
         var today = fmtDate(new Date());
         var group = document.querySelector('.day-group[data-date="' + today + '"]');
         if (group) {
-            group.scrollIntoView({ behavior: "smooth", block: "start" });
+            var headerH = document.querySelector("header").offsetHeight;
+            var y = group.getBoundingClientRect().top + window.scrollY - headerH;
+            window.scrollTo({ top: y, behavior: "smooth" });
         } else {
             window.scrollTo({ top: 0, behavior: "smooth" });
         }
@@ -1188,7 +1190,7 @@
 
     // --- Init ---
     loadAccounts().then(function () {
-        loadEntries().then(scrollToToday);
+        loadEntries();
     });
 
 })();

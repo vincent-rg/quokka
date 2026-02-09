@@ -145,7 +145,7 @@ class QuokkaHandler(BaseHTTPRequestHandler):
 
     def _handle_create_entry(self):
         data = self._read_body()
-        if not data.get("date") or not data.get("duration"):
+        if not data.get("date") or data.get("duration") is None:
             self._send_error(400, "date and duration are required")
             return
         entry = db.create_entry(DB_PATH, data)

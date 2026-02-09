@@ -127,7 +127,7 @@
         addDayBtn.textContent = "+";
         addDayBtn.title = "Add entry this day";
         addDayBtn.onclick = function () {
-            api("POST", "/api/entries", { date: group.date, duration: 60 }).then(loadEntries);
+            api("POST", "/api/entries", { date: group.date, duration: 0 }).then(loadEntries);
         };
         rightSpan.appendChild(addDayBtn);
         rightSpan.appendChild(totalSpan);
@@ -257,6 +257,7 @@
         var tr = document.createElement("tr");
         tr.dataset.id = entry.id;
         tr.draggable = true;
+        if (!entry.duration) tr.classList.add("zero-duration");
 
         // Drag start
         tr.addEventListener("dragstart", function (ev) {
@@ -520,7 +521,7 @@
     // --- Add entry ---
     function addEntryToday() {
         var today = fmtDate(new Date());
-        api("POST", "/api/entries", { date: today, duration: 60 }).then(function () {
+        api("POST", "/api/entries", { date: today, duration: 0 }).then(function () {
             loadEntries().then(scrollToToday);
         });
     }
@@ -540,7 +541,7 @@
             var date = input.value;
             input.remove();
             if (date) {
-                api("POST", "/api/entries", { date: date, duration: 60 }).then(function () {
+                api("POST", "/api/entries", { date: date, duration: 0 }).then(function () {
                     loadEntries().then(function () {
                         var group = document.querySelector('.day-group[data-date="' + date + '"]');
                         if (group) group.scrollIntoView({ behavior: "smooth", block: "start" });

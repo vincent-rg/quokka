@@ -428,13 +428,6 @@
         var actions = document.createElement("span");
         actions.className = "row-actions";
 
-        // Drag handle
-        var handle = document.createElement("span");
-        handle.className = "btn-row drag-handle";
-        handle.textContent = "\u2261";
-        handle.title = "Drag to move to another day";
-        actions.appendChild(handle);
-
         // Date change
         var dateBtn = document.createElement("button");
         dateBtn.className = "btn-row";

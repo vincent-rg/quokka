@@ -213,13 +213,6 @@ td select { padding: 1px 2px; }
 .btn-row:hover { color: var(--text); background: rgba(0,0,0,0.05); }
 .btn-row.btn-delete:hover { color: var(--danger); background: #fee; }
 
-/* Drag handle */
-.drag-handle {
-    cursor: grab;
-    user-select: none;
-}
-.drag-handle:active { cursor: grabbing; }
-
 /* Drop context menu */
 .drop-menu {
     position: fixed;

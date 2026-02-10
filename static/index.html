@@ -16,6 +16,7 @@
             <select id="view-select">
                 <option value="entries">Entries</option>
                 <option value="accounts">Accounts</option>
+                <option value="imputations">Imputations</option>
             </select>
             <span class="toolbar-sep"></span>
             <span id="toolbar-entries" class="toolbar-group">
@@ -25,6 +26,11 @@
             </span>
             <span id="toolbar-accounts" class="toolbar-group hidden">
                 <button id="btn-add-account">+ Add</button>
+            </span>
+            <span id="toolbar-imputations" class="toolbar-group hidden">
+                <button id="btn-imp-prev" title="Previous month">&#x25C0;</button>
+                <span id="imp-month-label" title="Click to pick month"></span>
+                <button id="btn-imp-next" title="Next month">&#x25B6;</button>
             </span>
             <span class="toolbar-sep"></span>
             <button id="btn-undo" title="Undo (Ctrl+Z)">&#x21B6;</button>
@@ -42,6 +48,13 @@
         <div id="view-accounts" class="hidden">
             <table id="accounts-table">
                 <tbody id="accounts-body"></tbody>
+            </table>
+        </div>
+        <div id="view-imputations" class="hidden">
+            <table id="imp-report-table">
+                <thead id="imp-report-head"></thead>
+                <tbody id="imp-report-body"></tbody>
+                <tfoot id="imp-report-foot"></tfoot>
             </table>
         </div>
     </main>

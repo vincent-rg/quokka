@@ -831,11 +831,14 @@
     function switchView(view) {
         document.getElementById("view-entries").classList.toggle("hidden", view !== "entries");
         document.getElementById("view-accounts").classList.toggle("hidden", view !== "accounts");
+        document.getElementById("view-imputations").classList.toggle("hidden", view !== "imputations");
         document.getElementById("toolbar-entries").classList.toggle("hidden", view !== "entries");
         document.getElementById("toolbar-accounts").classList.toggle("hidden", view !== "accounts");
+        document.getElementById("toolbar-imputations").classList.toggle("hidden", view !== "imputations");
         document.getElementById("view-select").value = view;
         if (view === "accounts") renderAccounts();
         if (view === "entries") loadEntries();
+        if (view === "imputations") renderImputationReport();
     }
 
     function renderAccounts() {
@@ -1322,6 +1325,229 @@
         });
     }
 
+    // --- Imputation report ---
+    var MONTH_NAMES = ["January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December"];
+    var MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    var reportMonth = (function () {
+        var d = new Date();
+        return { year: d.getFullYear(), month: d.getMonth() };
+    })();
+
+    function reportMonthLabel() {
+        return MONTH_NAMES[reportMonth.month] + " " + reportMonth.year;
+    }
+
+    function reportMonthRange() {
+        var y = reportMonth.year, m = reportMonth.month;
+        var first = new Date(y, m, 1);
+        var last = new Date(y, m + 1, 0);
+        return { from: fmtDate(first), to: fmtDate(last) };
+    }
+
+    function renderImputationReport() {
+        var range = reportMonthRange();
+        document.getElementById("imp-month-label").textContent = reportMonthLabel();
+        api("GET", "/api/entries?from=" + range.from + "&to=" + range.to).then(function (data) {
+            // Aggregate: { date -> { account_id -> { duration, number, label } } }
+            var dayMap = {};
+            for (var i = 0; i < data.length; i++) {
+                var e = data[i];
+                var splits = e.splits || [];
+                for (var j = 0; j < splits.length; j++) {
+                    var s = splits[j];
+                    if (!dayMap[e.date]) dayMap[e.date] = {};
+                    var key = s.account_id;
+                    if (!dayMap[e.date][key]) {
+                        dayMap[e.date][key] = {
+                            duration: 0,
+                            number: s.account_number || "?",
+                            label: acctLabel(s)
+                        };
+                    }
+                    dayMap[e.date][key].duration += s.duration;
+                }
+            }
+
+            // Sort dates ascending
+            var dates = Object.keys(dayMap).sort();
+
+            // Build table
+            var thead = document.getElementById("imp-report-head");
+            var tbody = document.getElementById("imp-report-body");
+            var tfoot = document.getElementById("imp-report-foot");
+            thead.innerHTML = "";
+            tbody.innerHTML = "";
+            tfoot.innerHTML = "";
+
+            // Header
+            var hr = document.createElement("tr");
+            var cols = ["Date", "Account", "Duration"];
+            for (var c = 0; c < cols.length; c++) {
+                var th = document.createElement("th");
+                th.textContent = cols[c];
+                hr.appendChild(th);
+            }
+            thead.appendChild(hr);
+
+            var grandTotal = 0;
+
+            for (var d = 0; d < dates.length; d++) {
+                var dt = dates[d];
+                var accts = dayMap[dt];
+                // Sort accounts by number
+                var acctIds = Object.keys(accts).sort(function (a, b) {
+                    return accts[a].number.localeCompare(accts[b].number);
+                });
+
+                // Compute day total first
+                var dayTotal = 0;
+                for (var a = 0; a < acctIds.length; a++) {
+                    dayTotal += accts[acctIds[a]].duration;
+                }
+                grandTotal += dayTotal;
+
+                // Day header row: date label + day total
+                var dayTr = document.createElement("tr");
+                dayTr.className = "imp-day-header";
+                if (d > 0) dayTr.classList.add("imp-day-gap");
+                var dayDateTd = document.createElement("td");
+                dayDateTd.textContent = dateDisplay(dt);
+                dayDateTd.className = "imp-date";
+                dayTr.appendChild(dayDateTd);
+                dayTr.appendChild(document.createElement("td"));
+                var dayDurTd = document.createElement("td");
+                dayDurTd.textContent = fmtDuration(dayTotal);
+                dayDurTd.className = "imp-dur";
+                dayTr.appendChild(dayDurTd);
+                tbody.appendChild(dayTr);
+
+                // Account entry rows under the day header
+                for (var a = 0; a < acctIds.length; a++) {
+                    var aid = acctIds[a];
+                    var info = accts[aid];
+
+                    var tr = document.createElement("tr");
+                    tr.className = "imp-entry";
+                    tr.appendChild(document.createElement("td"));
+                    // Account
+                    var acctTd = document.createElement("td");
+                    acctTd.textContent = info.label;
+                    tr.appendChild(acctTd);
+                    // Duration
+                    var durTd = document.createElement("td");
+                    durTd.textContent = fmtDuration(info.duration);
+                    durTd.className = "imp-dur";
+                    tr.appendChild(durTd);
+
+                    tbody.appendChild(tr);
+                }
+            }
+
+            // Grand total
+            var footTr = document.createElement("tr");
+            footTr.className = "imp-grand-total";
+            var footDateTd = document.createElement("td");
+            footDateTd.textContent = "Month total";
+            footTr.appendChild(footDateTd);
+            footTr.appendChild(document.createElement("td"));
+            var footDurTd = document.createElement("td");
+            footDurTd.textContent = fmtDuration(grandTotal);
+            footDurTd.className = "imp-dur";
+            footTr.appendChild(footDurTd);
+            tfoot.appendChild(footTr);
+
+            if (dates.length === 0) {
+                var emptyTr = document.createElement("tr");
+                var emptyTd = document.createElement("td");
+                emptyTd.colSpan = 3;
+                emptyTd.textContent = "No imputation data for this month.";
+                emptyTd.className = "imp-empty";
+                emptyTr.appendChild(emptyTd);
+                tbody.appendChild(emptyTr);
+            }
+        });
+    }
+
+    function impPrevMonth() {
+        reportMonth.month--;
+        if (reportMonth.month < 0) { reportMonth.month = 11; reportMonth.year--; }
+        renderImputationReport();
+    }
+
+    function impNextMonth() {
+        reportMonth.month++;
+        if (reportMonth.month > 11) { reportMonth.month = 0; reportMonth.year++; }
+        renderImputationReport();
+    }
+
+    function openMonthPicker() {
+        var existing = document.querySelector(".month-picker");
+        if (existing) { existing.remove(); return; }
+
+        var pickerYear = reportMonth.year;
+        var picker = document.createElement("div");
+        picker.className = "month-picker";
+
+        function render() {
+            picker.innerHTML = "";
+            var header = document.createElement("div");
+            header.className = "mp-header";
+            var prevBtn = document.createElement("button");
+            prevBtn.textContent = "\u25C0";
+            prevBtn.onclick = function () { pickerYear--; render(); };
+            var yearLabel = document.createElement("span");
+            yearLabel.textContent = pickerYear;
+            var nextBtn = document.createElement("button");
+            nextBtn.textContent = "\u25B6";
+            nextBtn.onclick = function () { pickerYear++; render(); };
+            header.appendChild(prevBtn);
+            header.appendChild(yearLabel);
+            header.appendChild(nextBtn);
+            picker.appendChild(header);
+
+            var grid = document.createElement("div");
+            grid.className = "mp-grid";
+            for (var m = 0; m < 12; m++) {
+                var btn = document.createElement("button");
+                btn.textContent = MONTH_SHORT[m];
+                if (pickerYear === reportMonth.year && m === reportMonth.month) {
+                    btn.className = "mp-current";
+                }
+                (function (month) {
+                    btn.onclick = function () {
+                        reportMonth.year = pickerYear;
+                        reportMonth.month = month;
+                        picker.remove();
+                        document.removeEventListener("mousedown", closePickerOutside);
+                        renderImputationReport();
+                    };
+                })(m);
+                grid.appendChild(btn);
+            }
+            picker.appendChild(grid);
+        }
+
+        render();
+
+        var label = document.getElementById("imp-month-label");
+        var rect = label.getBoundingClientRect();
+        picker.style.left = rect.left + "px";
+        picker.style.top = (rect.bottom + 4) + "px";
+        document.body.appendChild(picker);
+
+        function closePickerOutside(ev) {
+            if (!picker.contains(ev.target) && ev.target !== label) {
+                picker.remove();
+                document.removeEventListener("mousedown", closePickerOutside);
+            }
+        }
+        setTimeout(function () {
+            document.addEventListener("mousedown", closePickerOutside);
+        }, 0);
+    }
+
     // --- Event listeners ---
     document.getElementById("btn-undo").onclick = doUndo;
     document.getElementById("btn-redo").onclick = doRedo;
@@ -1329,6 +1555,9 @@
     document.getElementById("btn-add").onclick = addEntryToday;
     document.getElementById("btn-add-date").onclick = addEntryForDate;
     document.getElementById("btn-add-account").onclick = addAccount;
+    document.getElementById("btn-imp-prev").onclick = impPrevMonth;
+    document.getElementById("btn-imp-next").onclick = impNextMonth;
+    document.getElementById("imp-month-label").onclick = openMonthPicker;
     document.getElementById("view-select").onchange = function () { switchView(this.value); };
     document.getElementById("btn-close-grouping").onclick = closeGroupingModal;
     document.getElementById("btn-cancel-link").onclick = closeGroupingModal;

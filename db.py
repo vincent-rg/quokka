@@ -2,94 +2,98 @@ import sqlite3
 import os
 import uuid
 import json
+from contextlib import contextmanager
 
 
+@contextmanager
 def get_connection(db_path):
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
-    return conn
+    try:
+        yield conn
+    finally:
+        conn.close()
 
 
 def init_db(db_path):
-    conn = get_connection(db_path)
-    conn.executescript("""
-        CREATE TABLE IF NOT EXISTS imputation_accounts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            number TEXT NOT NULL UNIQUE,
-            description TEXT NOT NULL DEFAULT '',
-            project TEXT NOT NULL DEFAULT '',
-            open_date TEXT,
-            close_date TEXT,
-            active INTEGER NOT NULL DEFAULT 1
-        );
+    with get_connection(db_path) as conn:
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS imputation_accounts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                number TEXT NOT NULL UNIQUE,
+                description TEXT NOT NULL DEFAULT '',
+                project TEXT NOT NULL DEFAULT '',
+                open_date TEXT,
+                close_date TEXT,
+                active INTEGER NOT NULL DEFAULT 1
+            );
 
-        CREATE TABLE IF NOT EXISTS entries (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            date TEXT NOT NULL,
-            duration INTEGER NOT NULL,
-            description TEXT NOT NULL DEFAULT '',
-            notes TEXT NOT NULL DEFAULT '',
-            ado_workitem TEXT NOT NULL DEFAULT '',
-            ado_pr TEXT NOT NULL DEFAULT '',
-            imputation_account_id INTEGER,
-            imputation_duration INTEGER,
-            group_id TEXT,
-            FOREIGN KEY (imputation_account_id) REFERENCES imputation_accounts(id)
-        );
+            CREATE TABLE IF NOT EXISTS entries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT NOT NULL,
+                duration INTEGER NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                notes TEXT NOT NULL DEFAULT '',
+                ado_workitem TEXT NOT NULL DEFAULT '',
+                ado_pr TEXT NOT NULL DEFAULT '',
+                imputation_account_id INTEGER,
+                imputation_duration INTEGER,
+                group_id TEXT,
+                FOREIGN KEY (imputation_account_id) REFERENCES imputation_accounts(id)
+            );
 
-        CREATE INDEX IF NOT EXISTS idx_entries_date ON entries(date);
+            CREATE INDEX IF NOT EXISTS idx_entries_date ON entries(date);
 
-        CREATE TABLE IF NOT EXISTS undo_log (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            action_type TEXT NOT NULL,
-            before_state TEXT NOT NULL,
-            after_state TEXT NOT NULL,
-            created_at TEXT NOT NULL DEFAULT (datetime('now')),
-            undone INTEGER NOT NULL DEFAULT 0
-        );
-    """)
-    # Migration: add project column if missing
-    cols = [r[1] for r in conn.execute("PRAGMA table_info(imputation_accounts)").fetchall()]
-    if "project" not in cols:
-        conn.execute("ALTER TABLE imputation_accounts ADD COLUMN project TEXT NOT NULL DEFAULT ''")
-    # Migration: add open_date/close_date to accounts if missing
-    if "open_date" not in cols:
-        conn.execute("ALTER TABLE imputation_accounts ADD COLUMN open_date TEXT")
-    if "close_date" not in cols:
-        conn.execute("ALTER TABLE imputation_accounts ADD COLUMN close_date TEXT")
-    # Migration: add group_id column if missing
-    entry_cols = [r[1] for r in conn.execute("PRAGMA table_info(entries)").fetchall()]
-    if "group_id" not in entry_cols:
-        conn.execute("ALTER TABLE entries ADD COLUMN group_id TEXT")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_entries_group_id ON entries(group_id)")
-    # Migration: create entry_imputations table
-    conn.executescript("""
-        CREATE TABLE IF NOT EXISTS entry_imputations (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            entry_id INTEGER NOT NULL,
-            account_id INTEGER NOT NULL,
-            duration INTEGER NOT NULL,
-            position INTEGER NOT NULL DEFAULT 0,
-            FOREIGN KEY (entry_id) REFERENCES entries(id) ON DELETE CASCADE,
-            FOREIGN KEY (account_id) REFERENCES imputation_accounts(id)
-        );
-        CREATE INDEX IF NOT EXISTS idx_entry_imputations_entry
-            ON entry_imputations(entry_id);
-    """)
-    # Migrate existing single-account data to entry_imputations
-    has_old = conn.execute(
-        "SELECT COUNT(*) FROM entries WHERE imputation_account_id IS NOT NULL"
-    ).fetchone()[0]
-    has_new = conn.execute("SELECT COUNT(*) FROM entry_imputations").fetchone()[0]
-    if has_old and not has_new:
-        conn.execute("""
-            INSERT INTO entry_imputations (entry_id, account_id, duration, position)
-            SELECT id, imputation_account_id, COALESCE(imputation_duration, 0), 0
-            FROM entries WHERE imputation_account_id IS NOT NULL
+            CREATE TABLE IF NOT EXISTS undo_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                action_type TEXT NOT NULL,
+                before_state TEXT NOT NULL,
+                after_state TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                undone INTEGER NOT NULL DEFAULT 0
+            );
         """)
-    conn.commit()
-    conn.close()
+        # Migration: add project column if missing
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(imputation_accounts)").fetchall()]
+        if "project" not in cols:
+            conn.execute("ALTER TABLE imputation_accounts ADD COLUMN project TEXT NOT NULL DEFAULT ''")
+        # Migration: add open_date/close_date to accounts if missing
+        if "open_date" not in cols:
+            conn.execute("ALTER TABLE imputation_accounts ADD COLUMN open_date TEXT")
+        if "close_date" not in cols:
+            conn.execute("ALTER TABLE imputation_accounts ADD COLUMN close_date TEXT")
+        # Migration: add group_id column if missing
+        entry_cols = [r[1] for r in conn.execute("PRAGMA table_info(entries)").fetchall()]
+        if "group_id" not in entry_cols:
+            conn.execute("ALTER TABLE entries ADD COLUMN group_id TEXT")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_entries_group_id ON entries(group_id)")
+        # Migration: create entry_imputations table
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS entry_imputations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                entry_id INTEGER NOT NULL,
+                account_id INTEGER NOT NULL,
+                duration INTEGER NOT NULL,
+                position INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY (entry_id) REFERENCES entries(id) ON DELETE CASCADE,
+                FOREIGN KEY (account_id) REFERENCES imputation_accounts(id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_entry_imputations_entry
+                ON entry_imputations(entry_id);
+        """)
+        # Migrate existing single-account data to entry_imputations
+        has_old = conn.execute(
+            "SELECT COUNT(*) FROM entries WHERE imputation_account_id IS NOT NULL"
+        ).fetchone()[0]
+        has_new = conn.execute("SELECT COUNT(*) FROM entry_imputations").fetchone()[0]
+        if has_old and not has_new:
+            conn.execute("""
+                INSERT INTO entry_imputations (entry_id, account_id, duration, position)
+                SELECT id, imputation_account_id, COALESCE(imputation_duration, 0), 0
+                FROM entries WHERE imputation_account_id IS NOT NULL
+            """)
+        conn.commit()
 
 
 # --- Undo/Redo infrastructure ---
@@ -171,123 +175,113 @@ def _restore_entries(conn, target_state, all_entry_ids):
 
 
 def undo_status(db_path):
-    conn = get_connection(db_path)
-    can_undo = conn.execute("SELECT COUNT(*) FROM undo_log WHERE undone = 0").fetchone()[0] > 0
-    can_redo = conn.execute("SELECT COUNT(*) FROM undo_log WHERE undone = 1").fetchone()[0] > 0
-    conn.close()
-    return {"can_undo": can_undo, "can_redo": can_redo}
+    with get_connection(db_path) as conn:
+        can_undo = conn.execute("SELECT COUNT(*) FROM undo_log WHERE undone = 0").fetchone()[0] > 0
+        can_redo = conn.execute("SELECT COUNT(*) FROM undo_log WHERE undone = 1").fetchone()[0] > 0
+        return {"can_undo": can_undo, "can_redo": can_redo}
 
 
 def perform_undo(db_path):
-    conn = get_connection(db_path)
-    row = conn.execute(
-        "SELECT * FROM undo_log WHERE undone = 0 ORDER BY id DESC LIMIT 1"
-    ).fetchone()
-    if not row:
-        conn.close()
-        return {"ok": False, "reason": "nothing_to_undo"}
+    with get_connection(db_path) as conn:
+        row = conn.execute(
+            "SELECT * FROM undo_log WHERE undone = 0 ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        if not row:
+            return {"ok": False, "reason": "nothing_to_undo"}
 
-    record = dict(row)
-    before = json.loads(record["before_state"])
-    after = json.loads(record["after_state"])
+        record = dict(row)
+        before = json.loads(record["before_state"])
+        after = json.loads(record["after_state"])
 
-    all_ids = set()
-    for e in before:
-        all_ids.add(e["id"])
-    for e in after:
-        all_ids.add(e["id"])
+        all_ids = set()
+        for e in before:
+            all_ids.add(e["id"])
+        for e in after:
+            all_ids.add(e["id"])
 
-    _restore_entries(conn, before, all_ids)
-    conn.execute("UPDATE undo_log SET undone = 1 WHERE id = ?", (record["id"],))
-    conn.commit()
-    conn.close()
-    return {"ok": True, "action_type": record["action_type"]}
+        _restore_entries(conn, before, all_ids)
+        conn.execute("UPDATE undo_log SET undone = 1 WHERE id = ?", (record["id"],))
+        conn.commit()
+        return {"ok": True, "action_type": record["action_type"]}
 
 
 def perform_redo(db_path):
-    conn = get_connection(db_path)
-    row = conn.execute(
-        "SELECT * FROM undo_log WHERE undone = 1 ORDER BY id ASC LIMIT 1"
-    ).fetchone()
-    if not row:
-        conn.close()
-        return {"ok": False, "reason": "nothing_to_redo"}
+    with get_connection(db_path) as conn:
+        row = conn.execute(
+            "SELECT * FROM undo_log WHERE undone = 1 ORDER BY id ASC LIMIT 1"
+        ).fetchone()
+        if not row:
+            return {"ok": False, "reason": "nothing_to_redo"}
 
-    record = dict(row)
-    before = json.loads(record["before_state"])
-    after = json.loads(record["after_state"])
+        record = dict(row)
+        before = json.loads(record["before_state"])
+        after = json.loads(record["after_state"])
 
-    all_ids = set()
-    for e in before:
-        all_ids.add(e["id"])
-    for e in after:
-        all_ids.add(e["id"])
+        all_ids = set()
+        for e in before:
+            all_ids.add(e["id"])
+        for e in after:
+            all_ids.add(e["id"])
 
-    _restore_entries(conn, after, all_ids)
-    conn.execute("UPDATE undo_log SET undone = 0 WHERE id = ?", (record["id"],))
-    conn.commit()
-    conn.close()
-    return {"ok": True, "action_type": record["action_type"]}
+        _restore_entries(conn, after, all_ids)
+        conn.execute("UPDATE undo_log SET undone = 0 WHERE id = ?", (record["id"],))
+        conn.commit()
+        return {"ok": True, "action_type": record["action_type"]}
 
 
 # --- Imputation accounts ---
 
 def list_accounts(db_path, include_inactive=False):
-    conn = get_connection(db_path)
-    if include_inactive:
-        rows = conn.execute(
-            "SELECT * FROM imputation_accounts ORDER BY number"
-        ).fetchall()
-    else:
-        rows = conn.execute(
-            "SELECT * FROM imputation_accounts WHERE active = 1 ORDER BY number"
-        ).fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
+    with get_connection(db_path) as conn:
+        if include_inactive:
+            rows = conn.execute(
+                "SELECT * FROM imputation_accounts ORDER BY number"
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM imputation_accounts WHERE active = 1 ORDER BY number"
+            ).fetchall()
+        return [dict(r) for r in rows]
 
 
 def create_account(db_path, number, description="", project="", open_date=None, close_date=None):
-    conn = get_connection(db_path)
-    cur = conn.execute(
-        "INSERT INTO imputation_accounts (number, description, project, open_date, close_date) VALUES (?, ?, ?, ?, ?)",
-        (number, description, project, open_date, close_date),
-    )
-    account_id = cur.lastrowid
-    conn.commit()
-    row = conn.execute(
-        "SELECT * FROM imputation_accounts WHERE id = ?", (account_id,)
-    ).fetchone()
-    conn.close()
-    return dict(row)
+    with get_connection(db_path) as conn:
+        cur = conn.execute(
+            "INSERT INTO imputation_accounts (number, description, project, open_date, close_date) VALUES (?, ?, ?, ?, ?)",
+            (number, description, project, open_date, close_date),
+        )
+        account_id = cur.lastrowid
+        conn.commit()
+        row = conn.execute(
+            "SELECT * FROM imputation_accounts WHERE id = ?", (account_id,)
+        ).fetchone()
+        return dict(row)
 
 
 def update_account(db_path, account_id, **fields):
-    conn = get_connection(db_path)
-    allowed = {"number", "description", "project", "open_date", "close_date", "active"}
-    updates = {k: v for k, v in fields.items() if k in allowed}
-    if not updates:
-        conn.close()
-        return None
-    set_clause = ", ".join(f"{k} = ?" for k in updates)
-    values = list(updates.values()) + [account_id]
-    conn.execute(
-        f"UPDATE imputation_accounts SET {set_clause} WHERE id = ?", values
-    )
-    conn.commit()
-    row = conn.execute(
-        "SELECT * FROM imputation_accounts WHERE id = ?", (account_id,)
-    ).fetchone()
-    conn.close()
-    return dict(row) if row else None
+    with get_connection(db_path) as conn:
+        allowed = {"number", "description", "project", "open_date", "close_date", "active"}
+        updates = {k: v for k, v in fields.items() if k in allowed}
+        if not updates:
+            return None
+        set_clause = ", ".join(f"{k} = ?" for k in updates)
+        values = list(updates.values()) + [account_id]
+        conn.execute(
+            f"UPDATE imputation_accounts SET {set_clause} WHERE id = ?", values
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT * FROM imputation_accounts WHERE id = ?", (account_id,)
+        ).fetchone()
+        return dict(row) if row else None
 
 
 def delete_account(db_path, account_id):
-    conn = get_connection(db_path)
-    conn.execute(
-        "UPDATE imputation_accounts SET active = 0 WHERE id = ?", (account_id,)
-    )
-    conn.commit()
-    conn.close()
+    with get_connection(db_path) as conn:
+        conn.execute(
+            "UPDATE imputation_accounts SET active = 0 WHERE id = ?", (account_id,)
+        )
+        conn.commit()
 
 
 # --- Entries ---
@@ -325,222 +319,212 @@ def _attach_splits(conn, entries):
 
 
 def list_entries(db_path, date_from=None, date_to=None):
-    conn = get_connection(db_path)
-    if date_from and date_to:
-        rows = conn.execute(
-            _ENTRY_QUERY + " WHERE date >= ? AND date <= ? ORDER BY date DESC, id",
-            (date_from, date_to),
-        ).fetchall()
-    else:
-        rows = conn.execute(
-            _ENTRY_QUERY + " ORDER BY date DESC, id"
-        ).fetchall()
-    entries = [dict(r) for r in rows]
-    _attach_splits(conn, entries)
-    conn.close()
-    return entries
+    with get_connection(db_path) as conn:
+        if date_from and date_to:
+            rows = conn.execute(
+                _ENTRY_QUERY + " WHERE date >= ? AND date <= ? ORDER BY date DESC, id",
+                (date_from, date_to),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                _ENTRY_QUERY + " ORDER BY date DESC, id"
+            ).fetchall()
+        entries = [dict(r) for r in rows]
+        _attach_splits(conn, entries)
+        return entries
 
 
 def create_entry(db_path, data):
-    conn = get_connection(db_path)
-    splits_data = data.get("splits")
-    cur = conn.execute(
-        """INSERT INTO entries
-           (date, duration, description, notes, ado_workitem, ado_pr)
-           VALUES (?, ?, ?, ?, ?, ?)""",
-        (
-            data["date"],
-            data["duration"],
-            data.get("description", ""),
-            data.get("notes", ""),
-            data.get("ado_workitem", ""),
-            data.get("ado_pr", ""),
-        ),
-    )
-    entry_id = cur.lastrowid
-    if splits_data:
-        for i, s in enumerate(splits_data):
-            conn.execute(
-                "INSERT INTO entry_imputations (entry_id, account_id, duration, position) VALUES (?, ?, ?, ?)",
-                (entry_id, s["account_id"], s["duration"], i),
-            )
-    after = _snapshot_entries(conn, [entry_id])
-    _record_undo(conn, "create_entry", [], after)
-    conn.commit()
-    row = conn.execute(_ENTRY_QUERY + " WHERE id = ?", (entry_id,)).fetchone()
-    entry = dict(row)
-    _attach_splits(conn, [entry])
-    conn.close()
-    return entry
+    with get_connection(db_path) as conn:
+        splits_data = data.get("splits")
+        cur = conn.execute(
+            """INSERT INTO entries
+               (date, duration, description, notes, ado_workitem, ado_pr)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (
+                data["date"],
+                data["duration"],
+                data.get("description", ""),
+                data.get("notes", ""),
+                data.get("ado_workitem", ""),
+                data.get("ado_pr", ""),
+            ),
+        )
+        entry_id = cur.lastrowid
+        if splits_data:
+            for i, s in enumerate(splits_data):
+                conn.execute(
+                    "INSERT INTO entry_imputations (entry_id, account_id, duration, position) VALUES (?, ?, ?, ?)",
+                    (entry_id, s["account_id"], s["duration"], i),
+                )
+        after = _snapshot_entries(conn, [entry_id])
+        _record_undo(conn, "create_entry", [], after)
+        conn.commit()
+        row = conn.execute(_ENTRY_QUERY + " WHERE id = ?", (entry_id,)).fetchone()
+        entry = dict(row)
+        _attach_splits(conn, [entry])
+        return entry
 
 
 def update_entry(db_path, entry_id, data):
-    conn = get_connection(db_path)
-    splits_data = data.pop("splits", None)
-    allowed = {
-        "date", "duration", "description", "notes",
-        "ado_workitem", "ado_pr", "group_id",
-    }
-    updates = {k: v for k, v in data.items() if k in allowed}
+    with get_connection(db_path) as conn:
+        splits_data = data.pop("splits", None)
+        allowed = {
+            "date", "duration", "description", "notes",
+            "ado_workitem", "ado_pr", "group_id",
+        }
+        updates = {k: v for k, v in data.items() if k in allowed}
 
-    row = conn.execute("SELECT group_id FROM entries WHERE id = ?", (entry_id,)).fetchone()
-    if not row:
-        conn.close()
-        return None
-    group_id = row["group_id"]
-    shared_updates = {k: v for k, v in updates.items() if k in SHARED_FIELDS}
+        row = conn.execute("SELECT group_id FROM entries WHERE id = ?", (entry_id,)).fetchone()
+        if not row:
+            return None
+        group_id = row["group_id"]
+        shared_updates = {k: v for k, v in updates.items() if k in SHARED_FIELDS}
 
-    # Determine affected entries (splits are per-entry, not grouped)
-    affected_ids = {entry_id}
-    if group_id and shared_updates:
-        group_rows = conn.execute("SELECT id FROM entries WHERE group_id = ?", (group_id,)).fetchall()
-        affected_ids = {r["id"] for r in group_rows}
+        # Determine affected entries (splits are per-entry, not grouped)
+        affected_ids = {entry_id}
+        if group_id and shared_updates:
+            group_rows = conn.execute("SELECT id FROM entries WHERE group_id = ?", (group_id,)).fetchall()
+            affected_ids = {r["id"] for r in group_rows}
 
-    if not updates and splits_data is None:
-        conn.close()
-        return None
+        if not updates and splits_data is None:
+            return None
 
-    # Snapshot BEFORE
-    before = _snapshot_entries(conn, list(affected_ids))
+        # Snapshot BEFORE
+        before = _snapshot_entries(conn, list(affected_ids))
 
-    # Update scalar fields on the target entry
-    if updates:
-        set_clause = ", ".join(f"{k} = ?" for k in updates)
-        values = list(updates.values()) + [entry_id]
-        conn.execute(f"UPDATE entries SET {set_clause} WHERE id = ?", values)
+        # Update scalar fields on the target entry
+        if updates:
+            set_clause = ", ".join(f"{k} = ?" for k in updates)
+            values = list(updates.values()) + [entry_id]
+            conn.execute(f"UPDATE entries SET {set_clause} WHERE id = ?", values)
 
-    # Propagate shared fields to group members
-    if group_id and shared_updates:
-        set_clause2 = ", ".join(f"{k} = ?" for k in shared_updates)
-        values2 = list(shared_updates.values()) + [group_id]
-        conn.execute(f"UPDATE entries SET {set_clause2} WHERE group_id = ?", values2)
+        # Propagate shared fields to group members
+        if group_id and shared_updates:
+            set_clause2 = ", ".join(f"{k} = ?" for k in shared_updates)
+            values2 = list(shared_updates.values()) + [group_id]
+            conn.execute(f"UPDATE entries SET {set_clause2} WHERE group_id = ?", values2)
 
-    # Update splits (per-entry only, not propagated to group)
-    if splits_data is not None:
-        conn.execute("DELETE FROM entry_imputations WHERE entry_id = ?", (entry_id,))
-        for i, s in enumerate(splits_data):
-            conn.execute(
-                "INSERT INTO entry_imputations (entry_id, account_id, duration, position) VALUES (?, ?, ?, ?)",
-                (entry_id, s["account_id"], s["duration"], i),
-            )
+        # Update splits (per-entry only, not propagated to group)
+        if splits_data is not None:
+            conn.execute("DELETE FROM entry_imputations WHERE entry_id = ?", (entry_id,))
+            for i, s in enumerate(splits_data):
+                conn.execute(
+                    "INSERT INTO entry_imputations (entry_id, account_id, duration, position) VALUES (?, ?, ?, ?)",
+                    (entry_id, s["account_id"], s["duration"], i),
+                )
 
-    # Snapshot AFTER
-    after = _snapshot_entries(conn, list(affected_ids))
-    _record_undo(conn, "update_entry", before, after)
-    conn.commit()
+        # Snapshot AFTER
+        after = _snapshot_entries(conn, list(affected_ids))
+        _record_undo(conn, "update_entry", before, after)
+        conn.commit()
 
-    row = conn.execute(_ENTRY_QUERY + " WHERE id = ?", (entry_id,)).fetchone()
-    if not row:
-        conn.close()
-        return None
-    entry = dict(row)
-    _attach_splits(conn, [entry])
-    conn.close()
-    return entry
+        row = conn.execute(_ENTRY_QUERY + " WHERE id = ?", (entry_id,)).fetchone()
+        if not row:
+            return None
+        entry = dict(row)
+        _attach_splits(conn, [entry])
+        return entry
 
 
 def duplicate_entry(db_path, entry_id, target_date, link=False):
-    conn = get_connection(db_path)
-    row = conn.execute("SELECT * FROM entries WHERE id = ?", (entry_id,)).fetchone()
-    if not row:
-        conn.close()
-        return None
-    src = dict(row)
+    with get_connection(db_path) as conn:
+        row = conn.execute("SELECT * FROM entries WHERE id = ?", (entry_id,)).fetchone()
+        if not row:
+            return None
+        src = dict(row)
 
-    # Before snapshot: source entry if link will modify it
-    before_ids = []
-    if link and not src["group_id"]:
-        before_ids = [entry_id]
-    before = _snapshot_entries(conn, before_ids)
+        # Before snapshot: source entry if link will modify it
+        before_ids = []
+        if link and not src["group_id"]:
+            before_ids = [entry_id]
+        before = _snapshot_entries(conn, before_ids)
 
-    group_id = None
-    if link:
-        if src["group_id"]:
-            group_id = src["group_id"]
-        else:
-            group_id = str(uuid.uuid4())
-            conn.execute("UPDATE entries SET group_id = ? WHERE id = ?", (group_id, entry_id))
-    cur = conn.execute(
-        """INSERT INTO entries
-           (date, duration, description, notes, ado_workitem, ado_pr, group_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (
-            target_date,
-            src["duration"],
-            src["description"],
-            src["notes"],
-            src["ado_workitem"],
-            src["ado_pr"],
-            group_id,
-        ),
-    )
-    new_id = cur.lastrowid
-
-    # Copy splits from source
-    src_splits = conn.execute(
-        "SELECT * FROM entry_imputations WHERE entry_id = ? ORDER BY position",
-        (entry_id,),
-    ).fetchall()
-    for s in src_splits:
-        conn.execute(
-            "INSERT INTO entry_imputations (entry_id, account_id, duration, position) VALUES (?, ?, ?, ?)",
-            (new_id, s["account_id"], s["duration"], s["position"]),
+        group_id = None
+        if link:
+            if src["group_id"]:
+                group_id = src["group_id"]
+            else:
+                group_id = str(uuid.uuid4())
+                conn.execute("UPDATE entries SET group_id = ? WHERE id = ?", (group_id, entry_id))
+        cur = conn.execute(
+            """INSERT INTO entries
+               (date, duration, description, notes, ado_workitem, ado_pr, group_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (
+                target_date,
+                src["duration"],
+                src["description"],
+                src["notes"],
+                src["ado_workitem"],
+                src["ado_pr"],
+                group_id,
+            ),
         )
+        new_id = cur.lastrowid
 
-    # After snapshot: new entry + source if modified
-    after_ids = [new_id]
-    if link and not src["group_id"]:
-        after_ids.append(entry_id)
-    after = _snapshot_entries(conn, after_ids)
+        # Copy splits from source
+        src_splits = conn.execute(
+            "SELECT * FROM entry_imputations WHERE entry_id = ? ORDER BY position",
+            (entry_id,),
+        ).fetchall()
+        for s in src_splits:
+            conn.execute(
+                "INSERT INTO entry_imputations (entry_id, account_id, duration, position) VALUES (?, ?, ?, ?)",
+                (new_id, s["account_id"], s["duration"], s["position"]),
+            )
 
-    action_type = "duplicate_link_entry" if link else "duplicate_entry"
-    _record_undo(conn, action_type, before, after)
-    conn.commit()
+        # After snapshot: new entry + source if modified
+        after_ids = [new_id]
+        if link and not src["group_id"]:
+            after_ids.append(entry_id)
+        after = _snapshot_entries(conn, after_ids)
 
-    new_row = conn.execute(_ENTRY_QUERY + " WHERE id = ?", (new_id,)).fetchone()
-    entry = dict(new_row)
-    _attach_splits(conn, [entry])
-    conn.close()
-    return entry
+        action_type = "duplicate_link_entry" if link else "duplicate_entry"
+        _record_undo(conn, action_type, before, after)
+        conn.commit()
+
+        new_row = conn.execute(_ENTRY_QUERY + " WHERE id = ?", (new_id,)).fetchone()
+        entry = dict(new_row)
+        _attach_splits(conn, [entry])
+        return entry
 
 
 def delete_entry(db_path, entry_id):
-    conn = get_connection(db_path)
-    row = conn.execute("SELECT * FROM entries WHERE id = ?", (entry_id,)).fetchone()
-    if not row:
-        conn.close()
-        return
+    with get_connection(db_path) as conn:
+        row = conn.execute("SELECT * FROM entries WHERE id = ?", (entry_id,)).fetchone()
+        if not row:
+            return
 
-    entry = dict(row)
-    group_id = entry.get("group_id")
+        entry = dict(row)
+        group_id = entry.get("group_id")
 
-    # Determine all affected entries
-    affected_ids = [entry_id]
-    cleanup_target_id = None
-    if group_id:
-        remaining = conn.execute(
-            "SELECT id FROM entries WHERE group_id = ? AND id != ?",
-            (group_id, entry_id),
-        ).fetchall()
-        if len(remaining) == 1:
-            cleanup_target_id = remaining[0]["id"]
-            affected_ids.append(cleanup_target_id)
+        # Determine all affected entries
+        affected_ids = [entry_id]
+        cleanup_target_id = None
+        if group_id:
+            remaining = conn.execute(
+                "SELECT id FROM entries WHERE group_id = ? AND id != ?",
+                (group_id, entry_id),
+            ).fetchall()
+            if len(remaining) == 1:
+                cleanup_target_id = remaining[0]["id"]
+                affected_ids.append(cleanup_target_id)
 
-    # Snapshot BEFORE
-    before = _snapshot_entries(conn, affected_ids)
+        # Snapshot BEFORE
+        before = _snapshot_entries(conn, affected_ids)
 
-    # Delete
-    conn.execute("DELETE FROM entries WHERE id = ?", (entry_id,))
-    if group_id:
-        _cleanup_group(conn, group_id)
+        # Delete
+        conn.execute("DELETE FROM entries WHERE id = ?", (entry_id,))
+        if group_id:
+            _cleanup_group(conn, group_id)
 
-    # Snapshot AFTER (only cleanup target if it exists)
-    after_ids = [cleanup_target_id] if cleanup_target_id else []
-    after = _snapshot_entries(conn, after_ids)
+        # Snapshot AFTER (only cleanup target if it exists)
+        after_ids = [cleanup_target_id] if cleanup_target_id else []
+        after = _snapshot_entries(conn, after_ids)
 
-    _record_undo(conn, "delete_entry", before, after)
-    conn.commit()
-    conn.close()
+        _record_undo(conn, "delete_entry", before, after)
+        conn.commit()
 
 
 def _cleanup_group(conn, group_id):
@@ -558,155 +542,146 @@ SHARED_FIELDS = {"description", "ado_workitem", "ado_pr"}
 
 
 def get_group_entries(db_path, group_id):
-    conn = get_connection(db_path)
-    rows = conn.execute(
-        _ENTRY_QUERY + " WHERE group_id = ? ORDER BY date DESC, id",
-        (group_id,),
-    ).fetchall()
-    entries = [dict(r) for r in rows]
-    _attach_splits(conn, entries)
-    conn.close()
-    return entries
+    with get_connection(db_path) as conn:
+        rows = conn.execute(
+            _ENTRY_QUERY + " WHERE group_id = ? ORDER BY date DESC, id",
+            (group_id,),
+        ).fetchall()
+        entries = [dict(r) for r in rows]
+        _attach_splits(conn, entries)
+        return entries
 
 
 def update_group_shared(db_path, group_id, data):
     """Propagate shared field changes to all entries in a group."""
-    conn = get_connection(db_path)
-    updates = {k: v for k, v in data.items() if k in SHARED_FIELDS}
-    if not updates:
-        conn.close()
-        return
-    set_clause = ", ".join(f"{k} = ?" for k in updates)
-    values = list(updates.values()) + [group_id]
-    conn.execute(f"UPDATE entries SET {set_clause} WHERE group_id = ?", values)
-    conn.commit()
-    conn.close()
+    with get_connection(db_path) as conn:
+        updates = {k: v for k, v in data.items() if k in SHARED_FIELDS}
+        if not updates:
+            return
+        set_clause = ", ".join(f"{k} = ?" for k in updates)
+        values = list(updates.values()) + [group_id]
+        conn.execute(f"UPDATE entries SET {set_clause} WHERE group_id = ?", values)
+        conn.commit()
 
 
 def ungroup_entry(db_path, entry_id):
     """Remove an entry from its group. If only one remains, dissolve the group."""
-    conn = get_connection(db_path)
-    row = conn.execute("SELECT group_id FROM entries WHERE id = ?", (entry_id,)).fetchone()
-    if not row or not row["group_id"]:
-        conn.close()
-        return
-    group_id = row["group_id"]
+    with get_connection(db_path) as conn:
+        row = conn.execute("SELECT group_id FROM entries WHERE id = ?", (entry_id,)).fetchone()
+        if not row or not row["group_id"]:
+            return
+        group_id = row["group_id"]
 
-    # Determine affected entries
-    affected_ids = [entry_id]
-    remaining = conn.execute(
-        "SELECT id FROM entries WHERE group_id = ? AND id != ?",
-        (group_id, entry_id),
-    ).fetchall()
-    if len(remaining) == 1:
-        affected_ids.append(remaining[0]["id"])
+        # Determine affected entries
+        affected_ids = [entry_id]
+        remaining = conn.execute(
+            "SELECT id FROM entries WHERE group_id = ? AND id != ?",
+            (group_id, entry_id),
+        ).fetchall()
+        if len(remaining) == 1:
+            affected_ids.append(remaining[0]["id"])
 
-    # Snapshot BEFORE
-    before = _snapshot_entries(conn, affected_ids)
+        # Snapshot BEFORE
+        before = _snapshot_entries(conn, affected_ids)
 
-    conn.execute("UPDATE entries SET group_id = NULL WHERE id = ?", (entry_id,))
-    _cleanup_group(conn, group_id)
+        conn.execute("UPDATE entries SET group_id = NULL WHERE id = ?", (entry_id,))
+        _cleanup_group(conn, group_id)
 
-    # Snapshot AFTER
-    after = _snapshot_entries(conn, affected_ids)
-    _record_undo(conn, "ungroup_entry", before, after)
-    conn.commit()
-    conn.close()
+        # Snapshot AFTER
+        after = _snapshot_entries(conn, affected_ids)
+        _record_undo(conn, "ungroup_entry", before, after)
+        conn.commit()
 
 
 def link_entries(db_path, entry_id, target_entry_id, resolution=None):
     """Link two entries into a group, applying conflict resolution for shared fields."""
-    conn = get_connection(db_path)
-    src = conn.execute("SELECT * FROM entries WHERE id = ?", (entry_id,)).fetchone()
-    tgt = conn.execute("SELECT * FROM entries WHERE id = ?", (target_entry_id,)).fetchone()
-    if not src or not tgt:
-        conn.close()
-        return None
+    with get_connection(db_path) as conn:
+        src = conn.execute("SELECT * FROM entries WHERE id = ?", (entry_id,)).fetchone()
+        tgt = conn.execute("SELECT * FROM entries WHERE id = ?", (target_entry_id,)).fetchone()
+        if not src or not tgt:
+            return None
 
-    src = dict(src)
-    tgt = dict(tgt)
+        src = dict(src)
+        tgt = dict(tgt)
 
-    # Determine the group_id to use
-    if tgt["group_id"]:
-        group_id = tgt["group_id"]
-    elif src["group_id"]:
-        group_id = src["group_id"]
-    else:
-        group_id = str(uuid.uuid4())
+        # Determine the group_id to use
+        if tgt["group_id"]:
+            group_id = tgt["group_id"]
+        elif src["group_id"]:
+            group_id = src["group_id"]
+        else:
+            group_id = str(uuid.uuid4())
 
-    # Collect ALL affected entry IDs
-    affected_ids = {entry_id, target_entry_id}
-    if tgt["group_id"]:
-        rows = conn.execute("SELECT id FROM entries WHERE group_id = ?", (tgt["group_id"],)).fetchall()
-        for r in rows:
-            affected_ids.add(r["id"])
-    if src["group_id"]:
-        rows = conn.execute("SELECT id FROM entries WHERE group_id = ?", (src["group_id"],)).fetchall()
-        for r in rows:
-            affected_ids.add(r["id"])
+        # Collect ALL affected entry IDs
+        affected_ids = {entry_id, target_entry_id}
+        if tgt["group_id"]:
+            rows = conn.execute("SELECT id FROM entries WHERE group_id = ?", (tgt["group_id"],)).fetchall()
+            for r in rows:
+                affected_ids.add(r["id"])
+        if src["group_id"]:
+            rows = conn.execute("SELECT id FROM entries WHERE group_id = ?", (src["group_id"],)).fetchall()
+            for r in rows:
+                affected_ids.add(r["id"])
 
-    # Snapshot BEFORE
-    before = _snapshot_entries(conn, list(affected_ids))
+        # Snapshot BEFORE
+        before = _snapshot_entries(conn, list(affected_ids))
 
-    # Apply resolution to determine shared field values
-    resolved = {}
-    if resolution:
-        for field, value in resolution.items():
-            if field in SHARED_FIELDS:
-                resolved[field] = value
-    else:
-        for field in SHARED_FIELDS:
-            resolved[field] = tgt[field]
+        # Apply resolution to determine shared field values
+        resolved = {}
+        if resolution:
+            for field, value in resolution.items():
+                if field in SHARED_FIELDS:
+                    resolved[field] = value
+        else:
+            for field in SHARED_FIELDS:
+                resolved[field] = tgt[field]
 
-    # Set group_id on source entry
-    conn.execute("UPDATE entries SET group_id = ? WHERE id = ?", (group_id, entry_id))
+        # Set group_id on source entry
+        conn.execute("UPDATE entries SET group_id = ? WHERE id = ?", (group_id, entry_id))
 
-    # If target didn't have a group_id, set it now
-    if not tgt["group_id"]:
-        conn.execute("UPDATE entries SET group_id = ? WHERE id = ?", (group_id, target_entry_id))
+        # If target didn't have a group_id, set it now
+        if not tgt["group_id"]:
+            conn.execute("UPDATE entries SET group_id = ? WHERE id = ?", (group_id, target_entry_id))
 
-    # Apply resolved shared fields to ALL entries in the group
-    if resolved:
-        set_clause = ", ".join(f"{k} = ?" for k in resolved)
-        values = list(resolved.values()) + [group_id]
-        conn.execute(f"UPDATE entries SET {set_clause} WHERE group_id = ?", values)
+        # Apply resolved shared fields to ALL entries in the group
+        if resolved:
+            set_clause = ", ".join(f"{k} = ?" for k in resolved)
+            values = list(resolved.values()) + [group_id]
+            conn.execute(f"UPDATE entries SET {set_clause} WHERE group_id = ?", values)
 
-    # Snapshot AFTER
-    after = _snapshot_entries(conn, list(affected_ids))
-    _record_undo(conn, "link_entries", before, after)
-    conn.commit()
+        # Snapshot AFTER
+        after = _snapshot_entries(conn, list(affected_ids))
+        _record_undo(conn, "link_entries", before, after)
+        conn.commit()
 
-    # Return the updated entry
-    row = conn.execute(_ENTRY_QUERY + " WHERE id = ?", (entry_id,)).fetchone()
-    entry = dict(row)
-    _attach_splits(conn, [entry])
-    conn.close()
-    return entry
+        # Return the updated entry
+        row = conn.execute(_ENTRY_QUERY + " WHERE id = ?", (entry_id,)).fetchone()
+        entry = dict(row)
+        _attach_splits(conn, [entry])
+        return entry
 
 
 def suggest_groups(db_path, entry_id):
     """Return entries/groups ranked by similarity to the given entry."""
-    conn = get_connection(db_path)
-    src = conn.execute("SELECT * FROM entries WHERE id = ?", (entry_id,)).fetchone()
-    if not src:
-        conn.close()
-        return []
-    src = dict(src)
+    with get_connection(db_path) as conn:
+        src = conn.execute("SELECT * FROM entries WHERE id = ?", (entry_id,)).fetchone()
+        if not src:
+            return []
+        src = dict(src)
 
-    # Get all other entries (exclude same entry and entries already in same group)
-    params = [entry_id]
-    where_extra = ""
-    if src["group_id"]:
-        where_extra = " AND (group_id IS NULL OR group_id != ?)"
-        params.append(src["group_id"])
+        # Get all other entries (exclude same entry and entries already in same group)
+        params = [entry_id]
+        where_extra = ""
+        if src["group_id"]:
+            where_extra = " AND (group_id IS NULL OR group_id != ?)"
+            params.append(src["group_id"])
 
-    rows = conn.execute(
-        _ENTRY_QUERY + f" WHERE id != ?{where_extra} ORDER BY date DESC, id",
-        params,
-    ).fetchall()
-    candidates = [dict(r) for r in rows]
-    _attach_splits(conn, candidates)
-    conn.close()
+        rows = conn.execute(
+            _ENTRY_QUERY + f" WHERE id != ?{where_extra} ORDER BY date DESC, id",
+            params,
+        ).fetchall()
+        candidates = [dict(r) for r in rows]
+        _attach_splits(conn, candidates)
 
     # Score by similarity
     def score(entry):

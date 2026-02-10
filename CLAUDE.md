@@ -63,7 +63,7 @@ All in `db.py:init_db()` - incremental `ALTER TABLE` / `CREATE TABLE IF NOT EXIS
 - **app.js size**: Single 1660-line IIFE. Could be split by view/feature but currently manageable since there's no build step.
 - **Column resize duplication**: Two nearly identical IIFEs (lines ~981-1027 for entries, ~1030-1072 for accounts) doing the same resize logic.
 - **Popup close patterns**: 5+ different popup/menu types each with their own close-on-outside-click handler. Could be unified.
-- **db.py connection management**: Every function opens/closes its own connection. Could use a context manager pattern.
+- ~~**db.py connection management**~~: Done — `get_connection` is now a `@contextmanager`; all public functions use `with get_connection(db_path) as conn:`.
 - **perform_undo / perform_redo**: Nearly identical (~25 lines each), differing only in query direction and which state to restore.
 - **Server routing**: POST routes use a chain of `re.match()` calls. Could use a routing table.
 - **No frontend error handling**: `api()` helper doesn't handle HTTP errors or network failures.

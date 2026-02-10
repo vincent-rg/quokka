@@ -5,12 +5,20 @@
     var entries = [];
     var accounts = [];
     var DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-    var COL_COUNT = 9; // number of columns in entry tables
-    var COL_DEFAULTS = [70, 180, 70, 70, 130, 70, 120, 28, 50];
+    var COL_COUNT = 8; // number of columns in entry tables
+    var COL_DEFAULTS = [70, 180, 70, 70, 180, 120, 28, 50];
     var colWidths = (function () {
         try {
             var saved = JSON.parse(localStorage.getItem("colWidths"));
             if (saved && saved.length === COL_DEFAULTS.length) return saved;
+            // Migrate from old 9-column layout
+            if (saved && saved.length === 9) {
+                var m = saved.slice(0, 4);
+                m.push(saved[4] + saved[5]);
+                m.push(saved[6], saved[7], saved[8]);
+                localStorage.setItem("colWidths", JSON.stringify(m));
+                return m;
+            }
         } catch (e) {}
         return COL_DEFAULTS.slice();
     })();
@@ -103,6 +111,20 @@
         if (a.project || a.account_project) parts.push(a.project || a.account_project);
         if (a.description || a.account_description) parts.push(a.description || a.account_description);
         return parts.join(" - ");
+    }
+
+    function checkSplitsDateWarning(splits, entryDate) {
+        if (!splits) return null;
+        for (var i = 0; i < splits.length; i++) {
+            var s = splits[i];
+            if (s.account_open_date && entryDate < s.account_open_date) {
+                return "Account " + (s.account_number || "?") + " not yet open (opens " + s.account_open_date + ")";
+            }
+            if (s.account_close_date && entryDate > s.account_close_date) {
+                return "Account " + (s.account_number || "?") + " closed (closed " + s.account_close_date + ")";
+            }
+        }
+        return null;
     }
 
     function api(method, path, body) {
@@ -215,8 +237,7 @@
             ["col-desc", "Description"],
             ["col-wi", "WI"],
             ["col-pr", "PR"],
-            ["col-acct", "Account"],
-            ["col-idur", "Imp. Dur."],
+            ["col-imp", "Imputation"],
             ["col-notes", "Notes"],
             ["col-link", ""],
             ["col-act", ""],
@@ -373,25 +394,11 @@
         addCell(tr, entry, "ado_workitem", entry.ado_workitem || "", "text");
         // ADO PR
         addCell(tr, entry, "ado_pr", entry.ado_pr || "", "text");
-        // Account (with date warning)
-        var al = entry.account_number ? acctLabel(entry) : "";
-        var acctWarn = null;
-        if (entry.imputation_account_id) {
-            for (var ai = 0; ai < accounts.length; ai++) {
-                if (accounts[ai].id === entry.imputation_account_id) {
-                    var a = accounts[ai];
-                    if (a.open_date && entry.date < a.open_date) {
-                        acctWarn = "Account not yet open (opens " + a.open_date + ")";
-                    } else if (a.close_date && entry.date > a.close_date) {
-                        acctWarn = "Account closed (closed " + a.close_date + ")";
-                    }
-                    break;
-                }
-            }
-        }
-        addCell(tr, entry, "imputation_account_id", al, "account-select", null, acctWarn);
-        // Imputation duration
-        addCell(tr, entry, "imputation_duration", fmtDuration(entry.imputation_duration), "duration-select");
+        // Imputation splits (inline chips)
+        var impTd = document.createElement("td");
+        impTd.className = "splits-cell";
+        renderSplitsChips(impTd, entry);
+        tr.appendChild(impTd);
         // Notes
         addCell(tr, entry, "notes", entry.notes ? "\u270E " + truncate(entry.notes, 15) : "", "notes");
         // Link
@@ -542,19 +549,6 @@
                 input.appendChild(opt);
             }
             input.value = entry[field] != null ? String(entry[field]) : "";
-        } else if (inputType === "account-select") {
-            input = document.createElement("select");
-            var emptyOpt2 = document.createElement("option");
-            emptyOpt2.value = "";
-            emptyOpt2.textContent = "\u2014 none \u2014";
-            input.appendChild(emptyOpt2);
-            for (var j = 0; j < accounts.length; j++) {
-                var opt2 = document.createElement("option");
-                opt2.value = accounts[j].id;
-                opt2.textContent = acctLabel(accounts[j]);
-                input.appendChild(opt2);
-            }
-            input.value = entry.imputation_account_id != null ? String(entry.imputation_account_id) : "";
         } else {
             input = document.createElement("input");
             input.type = "text";
@@ -572,8 +566,6 @@
 
             if (inputType === "duration-select") {
                 data[field] = val ? parseInt(val) : (field === "duration" ? 0 : null);
-            } else if (inputType === "account-select") {
-                data[field] = val ? parseInt(val) : null;
             } else {
                 data[field] = val;
             }
@@ -642,6 +634,153 @@
         document.getElementById("notes-cancel").onclick = function () {
             popup.classList.add("hidden");
         };
+    }
+
+    // --- Splits (inline chips) ---
+    function saveSplits(entry, splits) {
+        return api("POST", "/api/entries/" + entry.id, { splits: splits }).then(loadEntries);
+    }
+
+    function renderSplitsChips(td, entry) {
+        td.innerHTML = "";
+        var splits = entry.splits || [];
+        var warn = checkSplitsDateWarning(splits, entry.date);
+
+        for (var i = 0; i < splits.length; i++) {
+            (function (idx) {
+                var s = splits[idx];
+                var chip = document.createElement("span");
+                chip.className = "split-chip";
+                if (warn) chip.title = warn;
+                var label = (s.account_number || "?") + ": " + fmtDuration(s.duration);
+                chip.appendChild(document.createTextNode(label));
+                var rm = document.createElement("span");
+                rm.className = "split-chip-rm";
+                rm.textContent = "\u00d7";
+                rm.onclick = function (ev) {
+                    ev.stopPropagation();
+                    var updated = splits.filter(function (_, j) { return j !== idx; })
+                        .map(function (s) { return { account_id: s.account_id, duration: s.duration }; });
+                    saveSplits(entry, updated);
+                };
+                chip.onclick = function (ev) {
+                    ev.stopPropagation();
+                    openSplitAdder(td, entry, idx);
+                };
+                chip.appendChild(rm);
+                td.appendChild(chip);
+            })(i);
+        }
+
+        var addBtn = document.createElement("span");
+        addBtn.className = "split-add";
+        addBtn.textContent = "+";
+        addBtn.title = "Add imputation split";
+        addBtn.onclick = function (ev) {
+            ev.stopPropagation();
+            openSplitAdder(td, entry, null);
+        };
+        td.appendChild(addBtn);
+    }
+
+    function openSplitAdder(td, entry, editIdx) {
+        // editIdx: null = add new, number = edit existing split at that index
+        var existing = document.querySelector(".split-adder");
+        if (existing) existing.remove();
+
+        var splits = entry.splits || [];
+        var editing = editIdx != null ? splits[editIdx] : null;
+
+        // Account IDs already used (exclude the one being edited)
+        var usedIds = {};
+        for (var u = 0; u < splits.length; u++) {
+            if (u !== editIdx) usedIds[splits[u].account_id] = true;
+        }
+
+        var adder = document.createElement("div");
+        adder.className = "split-adder";
+
+        var acctSel = document.createElement("select");
+        var emptyOpt = document.createElement("option");
+        emptyOpt.value = "";
+        emptyOpt.textContent = "-- account --";
+        acctSel.appendChild(emptyOpt);
+        for (var j = 0; j < accounts.length; j++) {
+            if (usedIds[accounts[j].id]) continue;
+            var opt = document.createElement("option");
+            opt.value = accounts[j].id;
+            opt.textContent = acctLabel(accounts[j]);
+            acctSel.appendChild(opt);
+        }
+        adder.appendChild(acctSel);
+
+        var durSel = document.createElement("select");
+        var emptyDur = document.createElement("option");
+        emptyDur.value = "";
+        emptyDur.textContent = "--:--";
+        durSel.appendChild(emptyDur);
+        var opts = durationOptions();
+        for (var k = 0; k < opts.length; k++) {
+            var dopt = document.createElement("option");
+            dopt.value = opts[k].value;
+            dopt.textContent = opts[k].label;
+            durSel.appendChild(dopt);
+        }
+        adder.appendChild(durSel);
+
+        if (editing) {
+            acctSel.value = String(editing.account_id);
+            durSel.value = String(editing.duration);
+        } else {
+            durSel.style.display = "none";
+        }
+
+        function commitIfReady() {
+            if (!acctSel.value || !durSel.value) return;
+            var current = splits.map(function (s) {
+                return { account_id: s.account_id, duration: s.duration };
+            });
+            var newSplit = { account_id: parseInt(acctSel.value), duration: parseInt(durSel.value) };
+            if (editing) {
+                current[editIdx] = newSplit;
+            } else {
+                current.push(newSplit);
+            }
+            adder.remove();
+            document.removeEventListener("mousedown", closeAdderOutside);
+            saveSplits(entry, current);
+        }
+
+        acctSel.onchange = function () {
+            if (acctSel.value) {
+                durSel.style.display = "";
+                if (!editing) durSel.focus();
+                else commitIfReady();
+            }
+        };
+
+        durSel.onchange = function () {
+            commitIfReady();
+        };
+
+        // Position below the cell
+        var rect = td.getBoundingClientRect();
+        adder.style.left = rect.left + "px";
+        adder.style.top = (rect.bottom + 2) + "px";
+        document.body.appendChild(adder);
+        acctSel.focus();
+
+        // Close on outside click
+        setTimeout(function () {
+            document.addEventListener("mousedown", closeAdderOutside);
+        }, 0);
+
+        function closeAdderOutside(ev) {
+            if (!adder.contains(ev.target)) {
+                adder.remove();
+                document.removeEventListener("mousedown", closeAdderOutside);
+            }
+        }
     }
 
     // --- Scroll to today ---
@@ -1098,9 +1237,7 @@
     var SHARED_FIELD_LABELS = {
         description: "Description",
         ado_workitem: "Work Item",
-        ado_pr: "PR",
-        imputation_account_id: "Account",
-        imputation_duration: "Imp. Duration"
+        ado_pr: "PR"
     };
 
     function showConflictResolution(target) {
@@ -1109,7 +1246,7 @@
         fieldsDiv.innerHTML = "";
         var hasDiffs = false;
 
-        var sharedFields = ["description", "ado_workitem", "ado_pr", "imputation_account_id", "imputation_duration"];
+        var sharedFields = ["description", "ado_workitem", "ado_pr"];
         for (var i = 0; i < sharedFields.length; i++) {
             var field = sharedFields[i];
             var srcVal = groupingSourceEntry[field];
@@ -1169,13 +1306,6 @@
     }
 
     function formatFieldValue(field, val) {
-        if (field === "imputation_duration" && val) return fmtDuration(val);
-        if (field === "imputation_account_id" && val) {
-            for (var i = 0; i < accounts.length; i++) {
-                if (accounts[i].id == val) return acctLabel(accounts[i]);
-            }
-            return String(val);
-        }
         return String(val || "");
     }
 
@@ -1226,6 +1356,7 @@
             popup.classList.add("hidden");
         }
     });
+
 
     // Close modals on backdrop click
     document.getElementById("grouping-modal").onclick = function (ev) {

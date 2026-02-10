@@ -488,6 +488,69 @@ td select { padding: 1px 2px; }
     border-color: var(--accent);
 }
 
+/* Splits chips */
+.splits-cell {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 3px;
+    padding: 2px 3px;
+}
+.split-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    background: var(--accent-light);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 1px 4px;
+    font-size: 11px;
+    white-space: nowrap;
+    line-height: 1.4;
+    cursor: pointer;
+}
+.split-chip:hover { border-color: var(--accent); }
+.split-chip-rm {
+    cursor: pointer;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1;
+    margin-left: 1px;
+}
+.split-chip-rm:hover { color: var(--danger); }
+.split-add {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 3px;
+    cursor: pointer;
+    color: var(--muted);
+    font-size: 14px;
+    line-height: 1;
+}
+.split-add:hover { background: var(--accent-light); color: var(--text); }
+.split-adder {
+    position: fixed;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 6px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    z-index: 60;
+    display: flex;
+    gap: 4px;
+}
+.split-adder select {
+    border: 1px solid var(--border);
+    padding: 3px 4px;
+    font-size: 12px;
+    font-family: inherit;
+    border-radius: 3px;
+    background: var(--surface);
+}
+
 /* Undo/Redo toast */
 .undo-toast {
     position: fixed;

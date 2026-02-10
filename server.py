@@ -1,13 +1,19 @@
 #!/usr/bin/env python3
 """Quokka - Work time tracker server."""
 
+import glob
 import json
+import logging
 import os
 import re
+import shutil
+from datetime import date
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
 import db
+
+log = logging.getLogger("quokka")
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(BASE_DIR, "static")
@@ -37,8 +43,7 @@ class QuokkaHandler(BaseHTTPRequestHandler):
     """HTTP request handler for the Quokka app."""
 
     def log_message(self, format, *args):
-        # Quieter logging: just method + path
-        pass
+        log.info(format % args)
 
     def _send_json(self, data, status=200):
         body = json.dumps(data).encode("utf-8")
@@ -49,6 +54,7 @@ class QuokkaHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _send_error(self, status, message):
+        log.warning("%s %s -> %d %s", self.command, self.path, status, message)
         self._send_json({"error": message}, status)
 
     def _read_body(self):
@@ -268,15 +274,44 @@ class QuokkaHandler(BaseHTTPRequestHandler):
         self._send_json({"ok": True})
 
 
+def backup_db(db_path, max_backups=10):
+    """Create a daily backup of the DB file, keeping at most max_backups."""
+    backup_dir = os.path.join(os.path.dirname(db_path), "db_backups")
+    os.makedirs(backup_dir, exist_ok=True)
+    today = date.today().isoformat()
+    db_name = os.path.splitext(os.path.basename(db_path))[0]
+    backup_path = os.path.join(backup_dir, f"{db_name}_{today}.db")
+    if os.path.exists(backup_path):
+        log.info("Today's backup already exists: %s", backup_path)
+        return
+    if not os.path.exists(db_path):
+        return
+    shutil.copy2(db_path, backup_path)
+    log.info("Created DB backup: %s", backup_path)
+    # Prune old backups
+    backups = sorted(glob.glob(os.path.join(backup_dir, f"{db_name}_*.db")))
+    while len(backups) > max_backups:
+        old = backups.pop(0)
+        os.remove(old)
+        log.info("Removed old backup: %s", old)
+
+
 def main():
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    backup_db(DB_PATH)
+    log.info("Initializing database at %s", DB_PATH)
     db.init_db(DB_PATH)
     port = CONFIG.get("port", 8080)
     server = HTTPServer(("127.0.0.1", port), QuokkaHandler)
-    print(f"Quokka running on http://localhost:{port}")
+    log.info("Quokka running on http://localhost:%d", port)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\nShutting down.")
+        log.info("Shutting down.")
         server.server_close()
 
 

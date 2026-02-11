@@ -846,6 +846,11 @@
         acctSel.onchange = function () {
             if (acctSel.value) {
                 durSel.style.display = "";
+                // Re-clamp after duration select appears
+                var ar = adder.getBoundingClientRect();
+                if (ar.right > window.innerWidth) {
+                    adder.style.left = Math.max(0, window.innerWidth - ar.width - 4) + "px";
+                }
                 if (!editing) durSel.focus();
                 else commitIfReady();
             }
@@ -855,11 +860,19 @@
             commitIfReady();
         };
 
-        // Position below the cell
+        // Position below the cell, clamped to viewport
         var rect = td.getBoundingClientRect();
         adder.style.left = rect.left + "px";
         adder.style.top = (rect.bottom + 2) + "px";
         document.body.appendChild(adder);
+        // Clamp so the adder doesn't overflow the right/bottom edge
+        var ar = adder.getBoundingClientRect();
+        if (ar.right > window.innerWidth) {
+            adder.style.left = Math.max(0, window.innerWidth - ar.width - 4) + "px";
+        }
+        if (ar.bottom > window.innerHeight) {
+            adder.style.top = Math.max(0, rect.top - ar.height - 2) + "px";
+        }
         acctSel.focus();
 
         // Close on outside click

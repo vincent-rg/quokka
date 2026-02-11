@@ -4,20 +4,25 @@
     // --- State ---
     var entries = [];
     var accounts = [];
+    var linkTypes = [];
     var DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-    var COL_COUNT = 8; // number of columns in entry tables
-    var COL_DEFAULTS = [70, 180, 70, 70, 180, 120, 28, 50];
+    var COL_COUNT = 7; // number of columns in entry tables
+    var COL_DEFAULTS = [70, 180, 180, 180, 120, 28, 50];
     var colWidths = (function () {
         try {
             var saved = JSON.parse(localStorage.getItem("colWidths"));
             if (saved && saved.length === COL_DEFAULTS.length) return saved;
-            // Migrate from old 9-column layout
-            if (saved && saved.length === 9) {
-                var m = saved.slice(0, 4);
-                m.push(saved[4] + saved[5]);
-                m.push(saved[6], saved[7], saved[8]);
+            // Migrate from old 8-column layout (drop WI+PR cols at index 2,3, insert ADO Items at 180px)
+            if (saved && saved.length === 8) {
+                var m = [saved[0], saved[1], 180, saved[4], saved[5], saved[6], saved[7]];
                 localStorage.setItem("colWidths", JSON.stringify(m));
                 return m;
+            }
+            // Migrate from old 9-column layout
+            if (saved && saved.length === 9) {
+                var m2 = [saved[0], saved[1], 180, saved[6], saved[7], saved[8], 50];
+                localStorage.setItem("colWidths", JSON.stringify(m2));
+                return m2;
             }
         } catch (e) {}
         return COL_DEFAULTS.slice();
@@ -52,6 +57,27 @@
 
     function saveAcctColWidths() {
         localStorage.setItem("acctColWidths", JSON.stringify(acctColWidths));
+    }
+
+    // ADO Links table column widths
+    var LT_COL_COUNT = 3;
+    var LT_COL_DEFAULTS = [140, 360, 40];
+    var ltColWidths = (function () {
+        try {
+            var saved = JSON.parse(localStorage.getItem("ltColWidths"));
+            if (saved && saved.length === LT_COL_DEFAULTS.length) return saved;
+        } catch (e) {}
+        return LT_COL_DEFAULTS.slice();
+    })();
+
+    function totalLtColWidth() {
+        var s = 0;
+        for (var i = 0; i < ltColWidths.length; i++) s += ltColWidths[i];
+        return s;
+    }
+
+    function saveLtColWidths() {
+        localStorage.setItem("ltColWidths", JSON.stringify(ltColWidths));
     }
 
     // Group colors: 8 distinct hues for left-border + highlight
@@ -179,6 +205,21 @@
         });
     }
 
+    function loadLinkTypes() {
+        return api("GET", "/api/link-types").then(function (data) {
+            linkTypes = data;
+        });
+    }
+
+    function linkTypeAbbrev(title) {
+        if (title.length <= 6) return title;
+        var words = title.split(/\s+/);
+        if (words.length >= 2) {
+            return words.map(function (w) { return w[0].toUpperCase(); }).join("");
+        }
+        return title.slice(0, 4);
+    }
+
     // --- Group entries by date ---
     function groupByDate() {
         var groups = [];
@@ -276,8 +317,7 @@
         var cols = [
             ["col-dur", "Duration"],
             ["col-desc", "Description"],
-            ["col-wi", "WI"],
-            ["col-pr", "PR"],
+            ["col-ado", "ADO Items"],
             ["col-imp", "Imputation"],
             ["col-notes", "Notes"],
             ["col-link", ""],
@@ -489,14 +529,19 @@
         addCell(tr, entry, "duration", durDisplay, "duration-select", !entry.duration ? "zero-warn" : null);
         // Description
         addCell(tr, entry, "description", entry.description || "", "text");
-        // ADO Work Item
-        addCell(tr, entry, "ado_workitem", entry.ado_workitem || "", "text");
-        // ADO PR
-        addCell(tr, entry, "ado_pr", entry.ado_pr || "", "text");
+        // ADO Items (inline chips)
+        var adoTd = document.createElement("td");
+        var adoWrap = document.createElement("div");
+        adoWrap.className = "ado-items-cell";
+        renderAdoItemsChips(adoWrap, entry);
+        adoTd.appendChild(adoWrap);
+        tr.appendChild(adoTd);
         // Imputation splits (inline chips)
         var impTd = document.createElement("td");
-        impTd.className = "splits-cell";
-        renderSplitsChips(impTd, entry);
+        var impWrap = document.createElement("div");
+        impWrap.className = "splits-cell";
+        renderSplitsChips(impWrap, entry);
+        impTd.appendChild(impWrap);
         tr.appendChild(impTd);
         // Notes
         addCell(tr, entry, "notes", entry.notes ? "\u270E " + truncate(entry.notes, 15) : "", "notes");
@@ -888,6 +933,181 @@
         }
     }
 
+    // --- ADO Items (inline chips) ---
+    function saveAdoItems(entry, items) {
+        return api("POST", "/api/entries/" + entry.id, { ado_items: items }).then(loadEntries);
+    }
+
+    function renderAdoItemsChips(td, entry) {
+        td.innerHTML = "";
+        var items = entry.ado_items || [];
+
+        for (var i = 0; i < items.length; i++) {
+            (function (idx) {
+                var a = items[idx];
+                var chip = document.createElement("span");
+                chip.className = "ado-chip";
+                var abbrev = linkTypeAbbrev(a.link_type_title || "?");
+                var label = abbrev + ": " + a.value;
+                chip.title = (a.link_type_title || "?") + ": " + a.value;
+                if (a.link_type_url_template) {
+                    chip.title += "\nCtrl+click to open link";
+                }
+                chip.appendChild(document.createTextNode(label));
+                var rm = document.createElement("span");
+                rm.className = "ado-chip-rm";
+                rm.textContent = "\u00d7";
+                rm.onclick = function (ev) {
+                    ev.stopPropagation();
+                    var updated = items.filter(function (_, j) { return j !== idx; })
+                        .map(function (a) { return { link_type_id: a.link_type_id, value: a.value }; });
+                    saveAdoItems(entry, updated);
+                };
+                chip.onclick = function (ev) {
+                    ev.stopPropagation();
+                    if ((ev.ctrlKey || ev.metaKey) && a.link_type_url_template) {
+                        var url = a.link_type_url_template.replace("{value}", encodeURIComponent(a.value));
+                        window.open(url, "_blank");
+                        return;
+                    }
+                    openAdoItemAdder(td, entry, idx);
+                };
+                chip.appendChild(rm);
+                td.appendChild(chip);
+            })(i);
+        }
+
+        var addBtn = document.createElement("span");
+        addBtn.className = "ado-add";
+        addBtn.textContent = "+";
+        addBtn.title = "Add ADO item";
+        addBtn.onclick = function (ev) {
+            ev.stopPropagation();
+            openAdoItemAdder(td, entry, null);
+        };
+        td.appendChild(addBtn);
+    }
+
+    function openAdoItemAdder(td, entry, editIdx) {
+        var existing = document.querySelector(".ado-item-adder");
+        if (existing) existing.remove();
+
+        var items = entry.ado_items || [];
+        var editing = editIdx != null ? items[editIdx] : null;
+
+        var adder = document.createElement("div");
+        adder.className = "ado-item-adder";
+
+        // Link type select
+        var typeSel = document.createElement("select");
+        var emptyOpt = document.createElement("option");
+        emptyOpt.value = "";
+        emptyOpt.textContent = "-- type --";
+        typeSel.appendChild(emptyOpt);
+        for (var j = 0; j < linkTypes.length; j++) {
+            var opt = document.createElement("option");
+            opt.value = linkTypes[j].id;
+            opt.textContent = linkTypes[j].title;
+            typeSel.appendChild(opt);
+        }
+        adder.appendChild(typeSel);
+
+        // Value input
+        var valInput = document.createElement("input");
+        valInput.type = "text";
+        valInput.placeholder = "value";
+        adder.appendChild(valInput);
+
+        if (editing) {
+            typeSel.value = String(editing.link_type_id);
+            valInput.value = editing.value;
+        } else {
+            valInput.style.display = "none";
+        }
+
+        function commitIfReady() {
+            if (!typeSel.value || !valInput.value.trim()) return;
+            var current = items.map(function (a) {
+                return { link_type_id: a.link_type_id, value: a.value };
+            });
+            var newItem = { link_type_id: parseInt(typeSel.value), value: valInput.value.trim() };
+            if (editing) {
+                current[editIdx] = newItem;
+            } else {
+                current.push(newItem);
+            }
+            adder.remove();
+            document.removeEventListener("mousedown", closeAdderOutside);
+            saveAdoItems(entry, current);
+        }
+
+        typeSel.onchange = function () {
+            if (typeSel.value) {
+                valInput.style.display = "";
+                // Re-clamp after input appears
+                var ar = adder.getBoundingClientRect();
+                if (ar.right > window.innerWidth) {
+                    adder.style.left = Math.max(0, window.innerWidth - ar.width - 4) + "px";
+                }
+                valInput.focus();
+                if (editing) valInput.select();
+            }
+        };
+
+        valInput.onkeydown = function (ev) {
+            if (ev.key === "Enter") {
+                ev.preventDefault();
+                commitIfReady();
+            } else if (ev.key === "Escape") {
+                adder.remove();
+                document.removeEventListener("mousedown", closeAdderOutside);
+            }
+        };
+
+        valInput.onblur = function () {
+            setTimeout(function () {
+                if (!adder.contains(document.activeElement)) {
+                    commitIfReady();
+                    if (adder.parentNode) {
+                        adder.remove();
+                        document.removeEventListener("mousedown", closeAdderOutside);
+                    }
+                }
+            }, 100);
+        };
+
+        // Position below the cell, clamped to viewport
+        var rect = td.getBoundingClientRect();
+        adder.style.left = rect.left + "px";
+        adder.style.top = (rect.bottom + 2) + "px";
+        document.body.appendChild(adder);
+        var ar = adder.getBoundingClientRect();
+        if (ar.right > window.innerWidth) {
+            adder.style.left = Math.max(0, window.innerWidth - ar.width - 4) + "px";
+        }
+        if (ar.bottom > window.innerHeight) {
+            adder.style.top = Math.max(0, rect.top - ar.height - 2) + "px";
+        }
+        if (editing) {
+            valInput.focus();
+            valInput.select();
+        } else {
+            typeSel.focus();
+        }
+
+        // Close on outside click
+        setTimeout(function () {
+            document.addEventListener("mousedown", closeAdderOutside);
+        }, 0);
+
+        function closeAdderOutside(ev) {
+            if (!adder.contains(ev.target)) {
+                adder.remove();
+                document.removeEventListener("mousedown", closeAdderOutside);
+            }
+        }
+    }
+
     // --- Scroll to today ---
     function scrollToToday() {
         var today = fmtDate(new Date());
@@ -944,13 +1164,16 @@
         document.getElementById("view-entries").classList.toggle("hidden", view !== "entries");
         document.getElementById("view-accounts").classList.toggle("hidden", view !== "accounts");
         document.getElementById("view-imputations").classList.toggle("hidden", view !== "imputations");
+        document.getElementById("view-ado-links").classList.toggle("hidden", view !== "ado-links");
         document.getElementById("toolbar-entries").classList.toggle("hidden", view !== "entries");
         document.getElementById("toolbar-accounts").classList.toggle("hidden", view !== "accounts");
         document.getElementById("toolbar-imputations").classList.toggle("hidden", view !== "imputations");
+        document.getElementById("toolbar-ado-links").classList.toggle("hidden", view !== "ado-links");
         document.getElementById("view-select").value = view;
         if (view === "accounts") renderAccounts();
         if (view === "entries") loadEntries();
         if (view === "imputations") renderImputationReport();
+        if (view === "ado-links") renderLinkTypes();
     }
 
     function renderAccounts() {
@@ -1183,6 +1406,51 @@
         });
     })();
 
+    // --- ADO Links table column resize ---
+    (function () {
+        var resizing = false, startX = 0, colIdx = 0, startW = 0;
+
+        document.getElementById("ado-links-table").addEventListener("mousedown", function (ev) {
+            if (!ev.target.classList.contains("col-resize")) return;
+            ev.preventDefault();
+            resizing = true;
+            colIdx = parseInt(ev.target.dataset.colIndex);
+            startX = ev.clientX;
+            startW = ltColWidths[colIdx];
+            document.body.style.cursor = "col-resize";
+            document.body.style.userSelect = "none";
+        });
+
+        document.addEventListener("mousemove", function (ev) {
+            if (!resizing) return;
+            var delta = ev.clientX - startX;
+            ltColWidths[colIdx] = Math.max(30, startW + delta);
+            applyLtColWidths();
+        });
+
+        document.addEventListener("mouseup", function () {
+            if (!resizing) return;
+            resizing = false;
+            document.body.style.cursor = "";
+            document.body.style.userSelect = "";
+            saveLtColWidths();
+        });
+
+        document.getElementById("ado-links-table").addEventListener("dblclick", function (ev) {
+            if (!ev.target.classList.contains("col-resize")) return;
+            ev.preventDefault();
+            var ci = parseInt(ev.target.dataset.colIndex);
+            var available = document.documentElement.clientWidth
+                - parseFloat(getComputedStyle(document.querySelector("main")).paddingLeft) * 2;
+            var tw = totalLtColWidth();
+            if (tw < available) {
+                ltColWidths[ci] = ltColWidths[ci] + (available - tw);
+                applyLtColWidths();
+                saveLtColWidths();
+            }
+        });
+    })();
+
     // --- Group hover cross-highlight ---
     document.getElementById("days-container").addEventListener("mouseenter", function (ev) {
         var tr = ev.target.closest("tr[data-group]");
@@ -1288,10 +1556,13 @@
 
         var filtered = groupingSuggestions.filter(function (e) {
             if (!lower) return true;
-            return (e.description || "").toLowerCase().indexOf(lower) >= 0
-                || (e.ado_workitem || "").toLowerCase().indexOf(lower) >= 0
-                || (e.ado_pr || "").toLowerCase().indexOf(lower) >= 0
-                || (e.date || "").indexOf(lower) >= 0;
+            if ((e.description || "").toLowerCase().indexOf(lower) >= 0) return true;
+            if ((e.date || "").indexOf(lower) >= 0) return true;
+            var adoItems = e.ado_items || [];
+            for (var ai = 0; ai < adoItems.length; ai++) {
+                if ((adoItems[ai].value || "").toLowerCase().indexOf(lower) >= 0) return true;
+            }
+            return false;
         });
 
         if (filtered.length === 0) {
@@ -1316,11 +1587,12 @@
             descSpan.textContent = e.description || "(no description)";
             item.appendChild(descSpan);
 
-            if (e.ado_workitem) {
-                var wiSpan = document.createElement("span");
-                wiSpan.className = "s-wi";
-                wiSpan.textContent = "WI:" + e.ado_workitem;
-                item.appendChild(wiSpan);
+            var adoItems = e.ado_items || [];
+            for (var ai = 0; ai < adoItems.length; ai++) {
+                var adoSpan = document.createElement("span");
+                adoSpan.className = "s-ado";
+                adoSpan.textContent = linkTypeAbbrev(adoItems[ai].link_type_title || "?") + ":" + adoItems[ai].value;
+                item.appendChild(adoSpan);
             }
 
             if (e.group_id) {
@@ -1343,9 +1615,7 @@
     }
 
     var SHARED_FIELD_LABELS = {
-        description: "Description",
-        ado_workitem: "Work Item",
-        ado_pr: "PR"
+        description: "Description"
     };
 
     function showConflictResolution(target) {
@@ -1354,7 +1624,7 @@
         fieldsDiv.innerHTML = "";
         var hasDiffs = false;
 
-        var sharedFields = ["description", "ado_workitem", "ado_pr"];
+        var sharedFields = ["description"];
         for (var i = 0; i < sharedFields.length; i++) {
             var field = sharedFields[i];
             var srcVal = groupingSourceEntry[field];
@@ -1660,6 +1930,107 @@
         }, 0);
     }
 
+    // --- ADO Links view ---
+    function applyLtColWidths() {
+        var table = document.getElementById("ado-links-table");
+        if (!table) return;
+        table.style.width = totalLtColWidth() + "px";
+        var cols = table.querySelectorAll("colgroup col");
+        for (var i = 0; i < cols.length; i++) {
+            cols[i].style.width = ltColWidths[i] + "px";
+        }
+    }
+
+    function renderLinkTypes() {
+        loadLinkTypes().then(function () {
+            var table = document.getElementById("ado-links-table");
+            table.style.tableLayout = "fixed";
+            table.style.width = totalLtColWidth() + "px";
+
+            // Rebuild colgroup
+            var oldCg = table.querySelector("colgroup");
+            if (oldCg) oldCg.remove();
+            var colgroup = document.createElement("colgroup");
+            for (var ci = 0; ci < LT_COL_COUNT; ci++) {
+                var col = document.createElement("col");
+                col.style.width = ltColWidths[ci] + "px";
+                colgroup.appendChild(col);
+            }
+            table.insertBefore(colgroup, table.firstChild);
+
+            // Rebuild thead with resize handles
+            var oldThead = table.querySelector("thead");
+            if (oldThead) oldThead.remove();
+            var thead = document.createElement("thead");
+            var headerRow = document.createElement("tr");
+            var ltCols = ["Title", "URL Template", ""];
+            for (var c = 0; c < ltCols.length; c++) {
+                var th = document.createElement("th");
+                th.textContent = ltCols[c];
+                if (c < ltCols.length - 1) {
+                    var handle = document.createElement("div");
+                    handle.className = "col-resize";
+                    handle.dataset.colIndex = c;
+                    th.appendChild(handle);
+                }
+                headerRow.appendChild(th);
+            }
+            thead.appendChild(headerRow);
+            table.insertBefore(thead, table.querySelector("tbody"));
+
+            var tbody = document.getElementById("ado-links-body");
+            tbody.innerHTML = "";
+            for (var i = 0; i < linkTypes.length; i++) {
+                tbody.appendChild(makeLinkTypeRow(linkTypes[i]));
+            }
+        });
+    }
+
+    function makeLinkTypeRow(lt) {
+        var tr = document.createElement("tr");
+
+        function makeField(field, placeholder) {
+            var td = document.createElement("td");
+            var inp = document.createElement("input");
+            inp.value = lt[field] || "";
+            if (placeholder) inp.placeholder = placeholder;
+            inp.onblur = function () {
+                if (inp.value !== (lt[field] || "")) {
+                    var data = {};
+                    data[field] = inp.value;
+                    api("POST", "/api/link-types/" + lt.id, data).then(function () {
+                        loadLinkTypes();
+                    });
+                }
+            };
+            inp.onkeydown = function (ev) { if (ev.key === "Enter") inp.blur(); };
+            td.appendChild(inp);
+            tr.appendChild(td);
+        }
+
+        makeField("title", "Title");
+        makeField("url_template", "e.g. https://dev.azure.com/.../{value}");
+
+        var tdAct = document.createElement("td");
+        var btn = document.createElement("button");
+        btn.className = "btn-row btn-delete";
+        btn.textContent = "\u00d7";
+        btn.title = "Delete link type";
+        btn.onclick = function () {
+            if (confirm("Delete link type \"" + lt.title + "\"? This will remove all ADO items using this type.")) {
+                api("POST", "/api/link-types/" + lt.id + "/delete").then(renderLinkTypes);
+            }
+        };
+        tdAct.appendChild(btn);
+        tr.appendChild(tdAct);
+
+        return tr;
+    }
+
+    function addLinkType() {
+        api("POST", "/api/link-types", { title: "New type" }).then(renderLinkTypes);
+    }
+
     // --- Event listeners ---
     document.getElementById("btn-undo").onclick = doUndo;
     document.getElementById("btn-redo").onclick = doRedo;
@@ -1667,6 +2038,7 @@
     document.getElementById("btn-add").onclick = addEntryToday;
     document.getElementById("btn-add-date").onclick = addEntryForDate;
     document.getElementById("btn-add-account").onclick = addAccount;
+    document.getElementById("btn-add-link-type").onclick = addLinkType;
     document.getElementById("btn-imp-prev").onclick = impPrevMonth;
     document.getElementById("btn-imp-next").onclick = impNextMonth;
     document.getElementById("imp-month-label").onclick = openMonthPicker;
@@ -1764,7 +2136,7 @@
     });
 
     // --- Init ---
-    loadAccounts().then(function () {
+    Promise.all([loadAccounts(), loadLinkTypes()]).then(function () {
         loadEntries();
     });
 

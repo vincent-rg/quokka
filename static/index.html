@@ -18,6 +18,7 @@
                 <option value="entries">Entries</option>
                 <option value="accounts">Accounts</option>
                 <option value="imputations">Imputations</option>
+                <option value="ado-links">ADO Links</option>
             </select>
             <span class="toolbar-sep"></span>
             <span id="toolbar-entries" class="toolbar-group">
@@ -32,6 +33,9 @@
                 <button id="btn-imp-prev" title="Previous month">&#x25C0;</button>
                 <span id="imp-month-label" title="Click to pick month"></span>
                 <button id="btn-imp-next" title="Next month">&#x25B6;</button>
+            </span>
+            <span id="toolbar-ado-links" class="toolbar-group hidden">
+                <button id="btn-add-link-type">+ Add</button>
             </span>
             <span class="toolbar-sep"></span>
             <button id="btn-undo" title="Undo (Ctrl+Z)">&#x21B6;</button>
@@ -58,6 +62,11 @@
                 <tfoot id="imp-report-foot"></tfoot>
             </table>
         </div>
+        <div id="view-ado-links" class="hidden">
+            <table id="ado-links-table">
+                <tbody id="ado-links-body"></tbody>
+            </table>
+        </div>
     </main>
 
     <!-- Grouping Modal -->
@@ -67,7 +76,7 @@
                 <h2>Link entry</h2>
                 <button class="modal-close" id="btn-close-grouping">&times;</button>
             </div>
-            <input type="text" class="suggestion-filter" id="grouping-filter" placeholder="Filter by description, WI, PR...">
+            <input type="text" class="suggestion-filter" id="grouping-filter" placeholder="Filter by description, ADO items...">
             <div class="suggestion-list" id="grouping-suggestions"></div>
             <div class="conflict-section hidden" id="conflict-section">
                 <h3>Resolve field differences</h3>

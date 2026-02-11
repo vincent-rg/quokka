@@ -694,3 +694,115 @@ td select { padding: 1px 2px; }
     font-weight: 400;
     margin-left: 6px;
 }
+
+/* ADO Items chips */
+.ado-items-cell {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 3px;
+    padding: 2px 3px;
+}
+.ado-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    background: #e8eef4;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 1px 4px;
+    font-size: 11px;
+    white-space: nowrap;
+    line-height: 1.4;
+    cursor: pointer;
+}
+.ado-chip:hover { border-color: #6a9fd8; }
+.ado-chip-rm {
+    cursor: pointer;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1;
+    margin-left: 1px;
+}
+.ado-chip-rm:hover { color: var(--danger); }
+.ado-add {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 3px;
+    cursor: pointer;
+    color: var(--muted);
+    font-size: 14px;
+    line-height: 1;
+}
+.ado-add:hover { background: #e8eef4; color: var(--text); }
+.ado-item-adder {
+    position: fixed;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 6px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    z-index: 60;
+    display: flex;
+    gap: 4px;
+}
+.ado-item-adder select {
+    border: 1px solid var(--border);
+    padding: 3px 4px;
+    font-size: 12px;
+    font-family: inherit;
+    border-radius: 3px;
+    background: var(--surface);
+    max-width: 40vw;
+}
+.ado-item-adder input {
+    border: 1px solid var(--border);
+    padding: 3px 4px;
+    font-size: 12px;
+    font-family: inherit;
+    border-radius: 3px;
+    background: var(--surface);
+    width: 120px;
+}
+
+/* ADO Links view */
+#view-ado-links { padding-top: 8px; }
+#ado-links-table {
+    border-collapse: collapse;
+    min-width: 500px;
+}
+#ado-links-table th {
+    position: relative;
+    text-align: left;
+    font-size: 11px;
+    text-transform: uppercase;
+    padding: 4px 6px;
+    border-bottom: 2px solid var(--border);
+}
+#ado-links-table td {
+    padding: 3px 6px;
+    border-bottom: 1px solid var(--border);
+}
+#ado-links-table td input {
+    width: 100%;
+    border: 1px solid var(--border);
+    padding: 2px 4px;
+    font-size: 13px;
+    border-radius: 2px;
+}
+#btn-add-link-type {
+    background: none;
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    padding: 4px 10px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 12px;
+}
+#btn-add-link-type:hover { background: var(--accent-light); }
+
+/* ADO item badge in grouping suggestions */
+.s-ado { color: var(--muted); font-size: 10px; }

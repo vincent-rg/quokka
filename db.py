@@ -93,6 +93,48 @@ def init_db(db_path):
                 SELECT id, imputation_account_id, COALESCE(imputation_duration, 0), 0
                 FROM entries WHERE imputation_account_id IS NOT NULL
             """)
+        # Migration: create ado_link_types and entry_ado_items tables
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS ado_link_types (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                url_template TEXT NOT NULL DEFAULT '',
+                position INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE TABLE IF NOT EXISTS entry_ado_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                entry_id INTEGER NOT NULL,
+                link_type_id INTEGER NOT NULL,
+                value TEXT NOT NULL,
+                position INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY (entry_id) REFERENCES entries(id) ON DELETE CASCADE,
+                FOREIGN KEY (link_type_id) REFERENCES ado_link_types(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_entry_ado_items_entry
+                ON entry_ado_items(entry_id);
+        """)
+        # Seed default link types if table is empty
+        has_types = conn.execute("SELECT COUNT(*) FROM ado_link_types").fetchone()[0]
+        if not has_types:
+            conn.execute("INSERT INTO ado_link_types (title, url_template, position) VALUES (?, ?, ?)",
+                         ("Work Item", "", 0))
+            conn.execute("INSERT INTO ado_link_types (title, url_template, position) VALUES (?, ?, ?)",
+                         ("Pull Request", "", 1))
+        # Migrate existing ado_workitem/ado_pr data to entry_ado_items
+        has_ado_items = conn.execute("SELECT COUNT(*) FROM entry_ado_items").fetchone()[0]
+        if not has_ado_items:
+            wi_type = conn.execute("SELECT id FROM ado_link_types WHERE title = 'Work Item'").fetchone()
+            pr_type = conn.execute("SELECT id FROM ado_link_types WHERE title = 'Pull Request'").fetchone()
+            if wi_type:
+                conn.execute("""
+                    INSERT INTO entry_ado_items (entry_id, link_type_id, value, position)
+                    SELECT id, ?, ado_workitem, 0 FROM entries WHERE ado_workitem != ''
+                """, (wi_type["id"],))
+            if pr_type:
+                conn.execute("""
+                    INSERT INTO entry_ado_items (entry_id, link_type_id, value, position)
+                    SELECT id, ?, ado_pr, 1 FROM entries WHERE ado_pr != ''
+                """, (pr_type["id"],))
         conn.commit()
 
 
@@ -122,6 +164,11 @@ def _snapshot_entries(conn, entry_ids):
             (d["id"],),
         ).fetchall()
         d["_splits"] = [dict(s) for s in splits]
+        ado_items = conn.execute(
+            "SELECT * FROM entry_ado_items WHERE entry_id = ? ORDER BY position",
+            (d["id"],),
+        ).fetchall()
+        d["_ado_items"] = [dict(a) for a in ado_items]
         result.append(d)
     return result
 
@@ -171,6 +218,14 @@ def _restore_entries(conn, target_state, all_entry_ids):
             conn.execute(
                 "INSERT INTO entry_imputations (id, entry_id, account_id, duration, position) VALUES (?, ?, ?, ?, ?)",
                 (s["id"], eid, s["account_id"], s["duration"], s["position"]),
+            )
+
+        # Restore ADO items (defaults to [] for old snapshots)
+        conn.execute("DELETE FROM entry_ado_items WHERE entry_id = ?", (eid,))
+        for a in edata.get("_ado_items", []):
+            conn.execute(
+                "INSERT INTO entry_ado_items (id, entry_id, link_type_id, value, position) VALUES (?, ?, ?, ?, ?)",
+                (a["id"], eid, a["link_type_id"], a["value"], a["position"]),
             )
 
 
@@ -318,6 +373,32 @@ def _attach_splits(conn, entries):
     return entries
 
 
+def _attach_ado_items(conn, entries):
+    """Attach ADO items with link type details to a list of entry dicts."""
+    if not entries:
+        return entries
+    entry_ids = [e["id"] for e in entries]
+    placeholders = ",".join("?" * len(entry_ids))
+    rows = conn.execute(f"""
+        SELECT ai.*, lt.title AS link_type_title,
+               lt.url_template AS link_type_url_template
+        FROM entry_ado_items ai
+        LEFT JOIN ado_link_types lt ON ai.link_type_id = lt.id
+        WHERE ai.entry_id IN ({placeholders})
+        ORDER BY ai.entry_id, ai.position
+    """, entry_ids).fetchall()
+    items_by_entry = {}
+    for r in rows:
+        d = dict(r)
+        eid = d["entry_id"]
+        if eid not in items_by_entry:
+            items_by_entry[eid] = []
+        items_by_entry[eid].append(d)
+    for e in entries:
+        e["ado_items"] = items_by_entry.get(e["id"], [])
+    return entries
+
+
 def list_entries(db_path, date_from=None, date_to=None):
     with get_connection(db_path) as conn:
         if date_from and date_to:
@@ -331,12 +412,14 @@ def list_entries(db_path, date_from=None, date_to=None):
             ).fetchall()
         entries = [dict(r) for r in rows]
         _attach_splits(conn, entries)
+        _attach_ado_items(conn, entries)
         return entries
 
 
 def create_entry(db_path, data):
     with get_connection(db_path) as conn:
         splits_data = data.get("splits")
+        ado_items_data = data.get("ado_items")
         cur = conn.execute(
             """INSERT INTO entries
                (date, duration, description, notes, ado_workitem, ado_pr)
@@ -357,21 +440,28 @@ def create_entry(db_path, data):
                     "INSERT INTO entry_imputations (entry_id, account_id, duration, position) VALUES (?, ?, ?, ?)",
                     (entry_id, s["account_id"], s["duration"], i),
                 )
+        if ado_items_data:
+            for i, a in enumerate(ado_items_data):
+                conn.execute(
+                    "INSERT INTO entry_ado_items (entry_id, link_type_id, value, position) VALUES (?, ?, ?, ?)",
+                    (entry_id, a["link_type_id"], a["value"], i),
+                )
         after = _snapshot_entries(conn, [entry_id])
         _record_undo(conn, "create_entry", [], after)
         conn.commit()
         row = conn.execute(_ENTRY_QUERY + " WHERE id = ?", (entry_id,)).fetchone()
         entry = dict(row)
         _attach_splits(conn, [entry])
+        _attach_ado_items(conn, [entry])
         return entry
 
 
 def update_entry(db_path, entry_id, data):
     with get_connection(db_path) as conn:
         splits_data = data.pop("splits", None)
+        ado_items_data = data.pop("ado_items", None)
         allowed = {
-            "date", "duration", "description", "notes",
-            "ado_workitem", "ado_pr", "group_id",
+            "date", "duration", "description", "notes", "group_id",
         }
         updates = {k: v for k, v in data.items() if k in allowed}
 
@@ -381,13 +471,13 @@ def update_entry(db_path, entry_id, data):
         group_id = row["group_id"]
         shared_updates = {k: v for k, v in updates.items() if k in SHARED_FIELDS}
 
-        # Determine affected entries (splits are per-entry, not grouped)
+        # Determine affected entries
         affected_ids = {entry_id}
-        if group_id and shared_updates:
+        if group_id and (shared_updates or ado_items_data is not None):
             group_rows = conn.execute("SELECT id FROM entries WHERE group_id = ?", (group_id,)).fetchall()
             affected_ids = {r["id"] for r in group_rows}
 
-        if not updates and splits_data is None:
+        if not updates and splits_data is None and ado_items_data is None:
             return None
 
         # Snapshot BEFORE
@@ -414,6 +504,16 @@ def update_entry(db_path, entry_id, data):
                     (entry_id, s["account_id"], s["duration"], i),
                 )
 
+        # Update ADO items (propagated to all group members)
+        if ado_items_data is not None:
+            for aid in affected_ids:
+                conn.execute("DELETE FROM entry_ado_items WHERE entry_id = ?", (aid,))
+                for i, a in enumerate(ado_items_data):
+                    conn.execute(
+                        "INSERT INTO entry_ado_items (entry_id, link_type_id, value, position) VALUES (?, ?, ?, ?)",
+                        (aid, a["link_type_id"], a["value"], i),
+                    )
+
         # Snapshot AFTER
         after = _snapshot_entries(conn, list(affected_ids))
         _record_undo(conn, "update_entry", before, after)
@@ -424,6 +524,7 @@ def update_entry(db_path, entry_id, data):
             return None
         entry = dict(row)
         _attach_splits(conn, [entry])
+        _attach_ado_items(conn, [entry])
         return entry
 
 
@@ -474,6 +575,17 @@ def duplicate_entry(db_path, entry_id, target_date, link=False):
                 (new_id, s["account_id"], s["duration"], s["position"]),
             )
 
+        # Copy ADO items from source
+        src_ado_items = conn.execute(
+            "SELECT * FROM entry_ado_items WHERE entry_id = ? ORDER BY position",
+            (entry_id,),
+        ).fetchall()
+        for a in src_ado_items:
+            conn.execute(
+                "INSERT INTO entry_ado_items (entry_id, link_type_id, value, position) VALUES (?, ?, ?, ?)",
+                (new_id, a["link_type_id"], a["value"], a["position"]),
+            )
+
         # After snapshot: new entry + source if modified
         after_ids = [new_id]
         if link and not src["group_id"]:
@@ -487,6 +599,7 @@ def duplicate_entry(db_path, entry_id, target_date, link=False):
         new_row = conn.execute(_ENTRY_QUERY + " WHERE id = ?", (new_id,)).fetchone()
         entry = dict(new_row)
         _attach_splits(conn, [entry])
+        _attach_ado_items(conn, [entry])
         return entry
 
 
@@ -538,7 +651,7 @@ def _cleanup_group(conn, group_id):
 
 # --- Grouping ---
 
-SHARED_FIELDS = {"description", "ado_workitem", "ado_pr"}
+SHARED_FIELDS = {"description"}
 
 
 def get_group_entries(db_path, group_id):
@@ -549,6 +662,7 @@ def get_group_entries(db_path, group_id):
         ).fetchall()
         entries = [dict(r) for r in rows]
         _attach_splits(conn, entries)
+        _attach_ado_items(conn, entries)
         return entries
 
 
@@ -649,6 +763,23 @@ def link_entries(db_path, entry_id, target_entry_id, resolution=None):
             values = list(resolved.values()) + [group_id]
             conn.execute(f"UPDATE entries SET {set_clause} WHERE group_id = ?", values)
 
+        # Merge ADO items across all group members (DISTINCT on link_type_id+value)
+        all_group_ids = list(affected_ids)
+        ph = ",".join("?" * len(all_group_ids))
+        all_ado = conn.execute(f"""
+            SELECT DISTINCT link_type_id, value FROM entry_ado_items
+            WHERE entry_id IN ({ph})
+        """, all_group_ids).fetchall()
+        merged_items = [dict(r) for r in all_ado]
+        # Apply merged set to every group member
+        for aid in all_group_ids:
+            conn.execute("DELETE FROM entry_ado_items WHERE entry_id = ?", (aid,))
+            for i, a in enumerate(merged_items):
+                conn.execute(
+                    "INSERT INTO entry_ado_items (entry_id, link_type_id, value, position) VALUES (?, ?, ?, ?)",
+                    (aid, a["link_type_id"], a["value"], i),
+                )
+
         # Snapshot AFTER
         after = _snapshot_entries(conn, list(affected_ids))
         _record_undo(conn, "link_entries", before, after)
@@ -658,6 +789,7 @@ def link_entries(db_path, entry_id, target_entry_id, resolution=None):
         row = conn.execute(_ENTRY_QUERY + " WHERE id = ?", (entry_id,)).fetchone()
         entry = dict(row)
         _attach_splits(conn, [entry])
+        _attach_ado_items(conn, [entry])
         return entry
 
 
@@ -682,14 +814,21 @@ def suggest_groups(db_path, entry_id):
         ).fetchall()
         candidates = [dict(r) for r in rows]
         _attach_splits(conn, candidates)
+        _attach_ado_items(conn, candidates)
+
+        # Also attach ADO items to source
+        _attach_ado_items(conn, [src])
+        src_ado_set = set()
+        for a in src.get("ado_items", []):
+            src_ado_set.add((a["link_type_id"], a["value"]))
 
     # Score by similarity
     def score(entry):
         s = 0
-        if src["ado_workitem"] and entry["ado_workitem"] == src["ado_workitem"]:
-            s += 10
-        if src["ado_pr"] and entry["ado_pr"] == src["ado_pr"]:
-            s += 5
+        # +10 per shared ADO item (link_type_id + value match)
+        for a in entry.get("ado_items", []):
+            if (a["link_type_id"], a["value"]) in src_ado_set:
+                s += 10
         if src["description"] and entry["description"] and (
             src["description"].lower() in entry["description"].lower()
             or entry["description"].lower() in src["description"].lower()
@@ -701,3 +840,45 @@ def suggest_groups(db_path, entry_id):
 
     candidates.sort(key=lambda e: (-score(e), e["date"]))
     return candidates
+
+
+# --- ADO Link Types ---
+
+def list_link_types(db_path):
+    with get_connection(db_path) as conn:
+        rows = conn.execute(
+            "SELECT * FROM ado_link_types ORDER BY position, id"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def create_link_type(db_path, title, url_template=""):
+    with get_connection(db_path) as conn:
+        max_pos = conn.execute("SELECT COALESCE(MAX(position), -1) FROM ado_link_types").fetchone()[0]
+        cur = conn.execute(
+            "INSERT INTO ado_link_types (title, url_template, position) VALUES (?, ?, ?)",
+            (title, url_template, max_pos + 1),
+        )
+        conn.commit()
+        row = conn.execute("SELECT * FROM ado_link_types WHERE id = ?", (cur.lastrowid,)).fetchone()
+        return dict(row)
+
+
+def update_link_type(db_path, link_type_id, **fields):
+    with get_connection(db_path) as conn:
+        allowed = {"title", "url_template", "position"}
+        updates = {k: v for k, v in fields.items() if k in allowed}
+        if not updates:
+            return None
+        set_clause = ", ".join(f"{k} = ?" for k in updates)
+        values = list(updates.values()) + [link_type_id]
+        conn.execute(f"UPDATE ado_link_types SET {set_clause} WHERE id = ?", values)
+        conn.commit()
+        row = conn.execute("SELECT * FROM ado_link_types WHERE id = ?", (link_type_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def delete_link_type(db_path, link_type_id):
+    with get_connection(db_path) as conn:
+        conn.execute("DELETE FROM ado_link_types WHERE id = ?", (link_type_id,))
+        conn.commit()

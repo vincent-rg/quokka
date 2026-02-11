@@ -97,6 +97,8 @@ class QuokkaHandler(BaseHTTPRequestHandler):
             self._handle_list_entries(parsed)
         elif path == "/api/accounts":
             self._handle_list_accounts()
+        elif path == "/api/link-types":
+            self._handle_list_link_types()
         elif path == "/api/undo-status":
             self._send_json(db.undo_status(DB_PATH))
         else:
@@ -160,6 +162,21 @@ class QuokkaHandler(BaseHTTPRequestHandler):
 
         if path == "/api/accounts":
             self._handle_create_account()
+            return
+
+        # Link type routes
+        m = re.match(r"^/api/link-types/(\d+)/delete$", path)
+        if m:
+            self._handle_delete_link_type(int(m.group(1)))
+            return
+
+        m = re.match(r"^/api/link-types/(\d+)$", path)
+        if m:
+            self._handle_update_link_type(int(m.group(1)))
+            return
+
+        if path == "/api/link-types":
+            self._handle_create_link_type()
             return
 
         self.send_error(404)
@@ -271,6 +288,31 @@ class QuokkaHandler(BaseHTTPRequestHandler):
 
     def _handle_delete_account(self, account_id):
         db.delete_account(DB_PATH, account_id)
+        self._send_json({"ok": True})
+
+    # --- Link type handlers ---
+
+    def _handle_list_link_types(self):
+        link_types = db.list_link_types(DB_PATH)
+        self._send_json(link_types)
+
+    def _handle_create_link_type(self):
+        data = self._read_body()
+        title = data.get("title", "New type")
+        url_template = data.get("url_template", "")
+        link_type = db.create_link_type(DB_PATH, title, url_template)
+        self._send_json(link_type, 201)
+
+    def _handle_update_link_type(self, link_type_id):
+        data = self._read_body()
+        link_type = db.update_link_type(DB_PATH, link_type_id, **data)
+        if link_type is None:
+            self._send_error(404, "Link type not found")
+            return
+        self._send_json(link_type)
+
+    def _handle_delete_link_type(self, link_type_id):
+        db.delete_link_type(DB_PATH, link_type_id)
         self._send_json({"ok": True})
 
 

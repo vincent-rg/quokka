@@ -16,13 +16,12 @@ $url = "http://127.0.0.1:$port"
 # Check if server is already running
 $alreadyRunning = $false
 if (Test-Path $pidFile) {
-    $pid = Get-Content $pidFile -Raw
-    $pid = $pid.Trim()
+    $serverPid = (Get-Content $pidFile -Raw).Trim()
     try {
-        $proc = Get-Process -Id $pid -ErrorAction Stop
+        $proc = Get-Process -Id $serverPid -ErrorAction Stop
         if ($proc.ProcessName -match "python") {
             $alreadyRunning = $true
-            Write-Host "Quokka server already running (PID $pid)"
+            Write-Host "Quokka server already running (PID $serverPid)"
         }
     } catch {
         Remove-Item $pidFile -Force

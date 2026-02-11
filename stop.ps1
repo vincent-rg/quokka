@@ -7,17 +7,17 @@ if (-not (Test-Path $pidFile)) {
     exit 0
 }
 
-$pid = (Get-Content $pidFile -Raw).Trim()
+$serverPid = (Get-Content $pidFile -Raw).Trim()
 try {
-    $proc = Get-Process -Id $pid -ErrorAction Stop
+    $proc = Get-Process -Id $serverPid -ErrorAction Stop
     if ($proc.ProcessName -match "python") {
-        Stop-Process -Id $pid -Force
-        Write-Host "Stopped Quokka server (PID $pid)"
+        Stop-Process -Id $serverPid -Force
+        Write-Host "Stopped Quokka server (PID $serverPid)"
     } else {
-        Write-Host "PID $pid is not a Python process, ignoring."
+        Write-Host "PID $serverPid is not a Python process, ignoring."
     }
 } catch {
-    Write-Host "Process $pid not found. Server may have already stopped."
+    Write-Host "Process $serverPid not found. Server may have already stopped."
 }
 
 Remove-Item $pidFile -Force -ErrorAction SilentlyContinue

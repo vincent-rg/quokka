@@ -297,11 +297,19 @@ def backup_db(db_path, max_backups=10):
 
 
 def main():
+    log_format = "%(asctime)s [%(levelname)s] %(message)s"
+    log_datefmt = "%Y-%m-%d %H:%M:%S"
     logging.basicConfig(
         level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
+        format=log_format,
+        datefmt=log_datefmt,
     )
+    # Also log to file so output is available for headless/background runs
+    log_path = os.path.join(BASE_DIR, "quokka.log")
+    file_handler = logging.FileHandler(log_path, encoding="utf-8")
+    file_handler.setLevel(logging.INFO)
+    file_handler.setFormatter(logging.Formatter(log_format, datefmt=log_datefmt))
+    logging.getLogger().addHandler(file_handler)
     backup_db(DB_PATH)
     log.info("Initializing database at %s", DB_PATH)
     db.init_db(DB_PATH)

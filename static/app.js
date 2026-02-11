@@ -743,7 +743,7 @@
                 var s = splits[idx];
                 var chip = document.createElement("span");
                 chip.className = "split-chip";
-                if (warn) chip.title = warn;
+                chip.title = warn || acctLabel(s);
                 var label = (s.account_number || "?") + ": " + fmtDuration(s.duration);
                 chip.appendChild(document.createTextNode(label));
                 var rm = document.createElement("span");

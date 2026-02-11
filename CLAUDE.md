@@ -67,3 +67,11 @@ All in `db.py:init_db()` - incremental `ALTER TABLE` / `CREATE TABLE IF NOT EXIS
 - **perform_undo / perform_redo**: Nearly identical (~25 lines each), differing only in query direction and which state to restore.
 - **Server routing**: POST routes use a chain of `re.match()` calls. Could use a routing table.
 - **No frontend error handling**: `api()` helper doesn't handle HTTP errors or network failures.
+
+## Current TODO
+
+1. **File logging for server** - Server uses `logging` but runs headless; add a file handler so logs persist to disk.
+2. **Imputation dropdown overflow** - Account dropdown overflows page (long titles). Duration dropdown appears off-screen after selection. Need suggestions before implementing.
+3. **Loading indicator / page lock** - No feedback when actions are processing (e.g. "+ today"). Add animated loading overlay to lock UI and show progress.
+4. **Empty placeholder for today** - When today has no entries, add a visible placeholder section so entries can be dragged into it.
+5. **"(today)" label on date header** - Append " (today)" after the date in the entries list when the date matches today.

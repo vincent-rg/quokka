@@ -127,13 +127,40 @@
         return null;
     }
 
+    // --- Loading overlay ---
+    var _apiCount = 0;
+    var _overlay = null;
+
+    function showLoading() {
+        _apiCount++;
+        if (_overlay) return;
+        _overlay = document.createElement("div");
+        _overlay.className = "loading-overlay";
+        var spinner = document.createElement("div");
+        spinner.className = "loading-spinner";
+        _overlay.appendChild(spinner);
+        document.body.appendChild(_overlay);
+    }
+
+    function hideLoading() {
+        _apiCount = Math.max(0, _apiCount - 1);
+        if (_apiCount === 0 && _overlay) {
+            _overlay.remove();
+            _overlay = null;
+        }
+    }
+
     function api(method, path, body) {
         var opts = { method: method, headers: {} };
         if (body !== undefined) {
             opts.headers["Content-Type"] = "application/json";
             opts.body = JSON.stringify(body);
         }
-        return fetch(path, opts).then(function (r) { return r.json(); });
+        showLoading();
+        return fetch(path, opts)
+            .then(function (r) { return r.json(); })
+            .then(function (data) { hideLoading(); return data; },
+                  function (err) { hideLoading(); throw err; });
     }
 
     // --- Load data ---
@@ -174,14 +201,22 @@
         var groups = groupByDate();
         var grandTotal = 0;
 
+        var todayStr = fmtDate(new Date());
+        var hasTodayGroup = false;
         for (var g = 0; g < groups.length; g++) {
             var group = groups[g];
+            if (group.date === todayStr) hasTodayGroup = true;
             var dayTotal = 0;
             for (var i = 0; i < group.entries.length; i++) {
                 dayTotal += group.entries[i].duration || 0;
             }
             grandTotal += dayTotal;
             container.appendChild(makeDayGroup(group, dayTotal));
+        }
+
+        // Empty placeholder for today if no entries exist
+        if (!hasTodayGroup) {
+            container.insertBefore(makeTodayPlaceholder(todayStr), container.firstChild);
         }
 
         document.getElementById("total-label").textContent = "Total: " + fmtDuration(grandTotal);
@@ -198,6 +233,12 @@
         var dateSpan = document.createElement("span");
         dateSpan.className = "day-date";
         dateSpan.textContent = dateDisplay(group.date);
+        if (group.date === fmtDate(new Date())) {
+            var todayLabel = document.createElement("span");
+            todayLabel.className = "day-today-label";
+            todayLabel.textContent = "(today)";
+            dateSpan.appendChild(todayLabel);
+        }
         var totalSpan = document.createElement("span");
         totalSpan.className = "day-total";
         totalSpan.textContent = fmtDuration(dayTotal);
@@ -285,6 +326,64 @@
             var sourceDate = parts[1] || "";
             var sameDay = sourceDate === group.date;
             showDropMenu(ev.clientX, ev.clientY, entryId, group.date, sameDay);
+        });
+
+        return div;
+    }
+
+    function makeTodayPlaceholder(todayStr) {
+        var div = document.createElement("div");
+        div.className = "day-group empty-placeholder";
+        div.dataset.date = todayStr;
+
+        var hdr = document.createElement("div");
+        hdr.className = "day-header";
+        var dateSpan = document.createElement("span");
+        dateSpan.className = "day-date";
+        dateSpan.textContent = dateDisplay(todayStr);
+        var todayLabel = document.createElement("span");
+        todayLabel.className = "day-today-label";
+        todayLabel.textContent = "(today)";
+        dateSpan.appendChild(todayLabel);
+        var rightSpan = document.createElement("span");
+        rightSpan.className = "day-right";
+        var addDayBtn = document.createElement("button");
+        addDayBtn.className = "btn-add-day";
+        addDayBtn.textContent = "+";
+        addDayBtn.title = "Add entry for today";
+        addDayBtn.onclick = function () {
+            api("POST", "/api/entries", { date: todayStr, duration: 0 }).then(loadEntries);
+        };
+        rightSpan.appendChild(addDayBtn);
+        hdr.appendChild(dateSpan);
+        hdr.appendChild(rightSpan);
+        div.appendChild(hdr);
+
+        var hint = document.createElement("div");
+        hint.className = "today-hint";
+        hint.textContent = "No entries — drop here or click + to add";
+        div.appendChild(hint);
+
+        // Drop target
+        div.addEventListener("dragover", function (ev) {
+            ev.preventDefault();
+            div.classList.add("drag-over");
+        });
+        div.addEventListener("dragleave", function (ev) {
+            if (!div.contains(ev.relatedTarget)) {
+                div.classList.remove("drag-over");
+            }
+        });
+        div.addEventListener("drop", function (ev) {
+            ev.preventDefault();
+            div.classList.remove("drag-over");
+            var raw = ev.dataTransfer.getData("text/plain");
+            if (!raw) return;
+            var parts = raw.split(":");
+            var entryId = parts[0];
+            var sourceDate = parts[1] || "";
+            var sameDay = sourceDate === todayStr;
+            showDropMenu(ev.clientX, ev.clientY, entryId, todayStr, sameDay);
         });
 
         return div;

@@ -25,7 +25,7 @@
                 <button id="btn-add" title="Add entry for today">+ Today</button>
                 <button id="btn-add-date" title="Add entry for another day">+ Date...</button>
                 <button id="btn-today" title="Scroll to today">Today</button>
-                <input type="search" id="search-entries" placeholder="Search..." title="Search description, notes, ADO items (Ctrl+F)">
+                <input type="search" id="filter-entries" placeholder="Filter..." title="Filter entries by description, notes, ADO items">
             </span>
             <span id="toolbar-accounts" class="toolbar-group hidden">
                 <button id="btn-add-account">+ Add</button>
@@ -97,6 +97,15 @@
             <button id="notes-save">Save</button>
             <button id="notes-cancel">Cancel</button>
         </div>
+    </div>
+
+    <!-- Find bar -->
+    <div id="find-bar" class="find-bar hidden">
+        <input type="text" id="find-input" placeholder="Find...">
+        <span id="find-counter"></span>
+        <button id="find-prev" title="Previous (Shift+Enter)">&#x2191;</button>
+        <button id="find-next" title="Next (Enter)">&#x2193;</button>
+        <button id="find-close" title="Close (Escape)">&times;</button>
     </div>
 
     <script src="/static/app.js"></script>

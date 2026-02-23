@@ -5,7 +5,7 @@
     var entries = [];
     var accounts = [];
     var linkTypes = [];
-    var searchTerm = "";
+    var filterTerm = "";
     var dropBeforeId = null;  // entry id to drop before (null = end of day)
     var dropIndicatorEl = null; // singleton indicator <tr>
     var DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -235,6 +235,98 @@
         return false;
     }
 
+    // --- Find (jump-to-match) ---
+    var findTerm = "";
+    var findMatches = []; // ordered entry IDs
+    var findIdx = -1;
+
+    function openFindBar() {
+        document.getElementById("find-bar").classList.remove("hidden");
+        var input = document.getElementById("find-input");
+        input.focus();
+        input.select();
+    }
+
+    function closeFindBar() {
+        document.getElementById("find-bar").classList.add("hidden");
+        document.getElementById("find-input").value = "";
+        findTerm = "";
+        findMatches = [];
+        findIdx = -1;
+        clearFindHighlights();
+    }
+
+    function clearFindHighlights() {
+        var rows = document.querySelectorAll("tr.find-match, tr.find-match-current");
+        for (var i = 0; i < rows.length; i++) {
+            rows[i].classList.remove("find-match", "find-match-current");
+        }
+    }
+
+    function applyFindHighlights() {
+        clearFindHighlights();
+        if (!findTerm || findMatches.length === 0) return;
+        for (var i = 0; i < findMatches.length; i++) {
+            var tr = document.querySelector("tr[data-id='" + findMatches[i] + "']");
+            if (tr) tr.classList.add(i === findIdx ? "find-match-current" : "find-match");
+        }
+    }
+
+    function updateFindCounter() {
+        var counter = document.getElementById("find-counter");
+        if (!findTerm) {
+            counter.textContent = "";
+        } else if (findMatches.length === 0) {
+            counter.textContent = "0/0";
+        } else {
+            counter.textContent = (findIdx + 1) + "/" + findMatches.length;
+        }
+        var input = document.getElementById("find-input");
+        if (findTerm && findMatches.length === 0) {
+            input.classList.add("no-results");
+        } else {
+            input.classList.remove("no-results");
+        }
+    }
+
+    function scrollToCurrentMatch() {
+        if (findIdx < 0 || findIdx >= findMatches.length) return;
+        var tr = document.querySelector("tr[data-id='" + findMatches[findIdx] + "']");
+        if (tr) tr.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+
+    function updateFind() {
+        findTerm = document.getElementById("find-input").value;
+        var lower = findTerm.toLowerCase();
+        findMatches = [];
+        findIdx = -1;
+        if (lower) {
+            for (var i = 0; i < entries.length; i++) {
+                if (matchesSearch(entries[i], lower)) findMatches.push(entries[i].id);
+            }
+            if (findMatches.length > 0) findIdx = 0;
+        }
+        applyFindHighlights();
+        updateFindCounter();
+        scrollToCurrentMatch();
+    }
+
+    function findNext() {
+        if (findMatches.length === 0) return;
+        findIdx = (findIdx + 1) % findMatches.length;
+        applyFindHighlights();
+        updateFindCounter();
+        scrollToCurrentMatch();
+    }
+
+    function findPrev() {
+        if (findMatches.length === 0) return;
+        findIdx = (findIdx - 1 + findMatches.length) % findMatches.length;
+        applyFindHighlights();
+        updateFindCounter();
+        scrollToCurrentMatch();
+    }
+
     // --- Group entries by date ---
     function groupByDate(arr) {
         arr = arr || entries;
@@ -255,7 +347,7 @@
     function renderDays() {
         var container = document.getElementById("days-container");
         container.innerHTML = "";
-        var lower = searchTerm.toLowerCase();
+        var lower = filterTerm.toLowerCase();
         var filtered = lower ? entries.filter(function (e) { return matchesSearch(e, lower); }) : entries;
         var groups = groupByDate(filtered);
         var grandTotal = 0;
@@ -279,6 +371,7 @@
         }
 
         document.getElementById("total-label").textContent = "Total: " + fmtDuration(grandTotal);
+        applyFindHighlights();
     }
 
     function makeDayGroup(group, dayTotal) {
@@ -1241,8 +1334,9 @@
     // --- View switching ---
     function switchView(view) {
         if (view !== "entries") {
-            searchTerm = "";
-            document.getElementById("search-entries").value = "";
+            filterTerm = "";
+            document.getElementById("filter-entries").value = "";
+            closeFindBar();
         }
         document.getElementById("view-entries").classList.toggle("hidden", view !== "entries");
         document.getElementById("view-accounts").classList.toggle("hidden", view !== "accounts");
@@ -2132,13 +2226,25 @@
     document.getElementById("grouping-filter").oninput = function () {
         renderGroupingSuggestions(this.value);
     };
-    document.getElementById("search-entries").oninput = function () {
-        searchTerm = this.value;
+    document.getElementById("filter-entries").oninput = function () {
+        filterTerm = this.value;
         renderDays();
     };
-    document.getElementById("search-entries").onkeydown = function (ev) {
-        if (ev.key === "Escape") { this.value = ""; searchTerm = ""; renderDays(); this.blur(); }
+    document.getElementById("filter-entries").onkeydown = function (ev) {
+        if (ev.key === "Escape") { this.value = ""; filterTerm = ""; renderDays(); this.blur(); }
     };
+    document.getElementById("find-input").oninput = function () { updateFind(); };
+    document.getElementById("find-input").onkeydown = function (ev) {
+        if (ev.key === "Enter") {
+            ev.preventDefault();
+            if (ev.shiftKey) findPrev(); else findNext();
+        } else if (ev.key === "Escape") {
+            closeFindBar();
+        }
+    };
+    document.getElementById("find-next").onclick = findNext;
+    document.getElementById("find-prev").onclick = findPrev;
+    document.getElementById("find-close").onclick = closeFindBar;
 
     // Close notes popup on outside click
     document.addEventListener("click", function (ev) {
@@ -2214,11 +2320,10 @@
     document.addEventListener("keydown", function (ev) {
         var tag = ev.target.tagName;
         if ((ev.ctrlKey || ev.metaKey) && ev.key === "f") {
-            var searchEl = document.getElementById("search-entries");
-            if (!searchEl.closest(".toolbar-group").classList.contains("hidden")) {
+            var currentView = document.getElementById("view-select").value;
+            if (currentView === "entries") {
                 ev.preventDefault();
-                searchEl.focus();
-                searchEl.select();
+                openFindBar();
                 return;
             }
         }

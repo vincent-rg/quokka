@@ -112,6 +112,11 @@ class QuokkaHandler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
 
         # Entry routes
+        m = re.match(r"^/api/entries/(\d+)/reorder$", path)
+        if m:
+            self._handle_reorder_entry(int(m.group(1)))
+            return
+
         m = re.match(r"^/api/entries/(\d+)/duplicate$", path)
         if m:
             self._handle_duplicate_entry(int(m.group(1)))
@@ -218,6 +223,15 @@ class QuokkaHandler(BaseHTTPRequestHandler):
             self._send_error(404, "Entry not found")
             return
         self._send_json(entry, 201)
+
+    def _handle_reorder_entry(self, entry_id):
+        data = self._read_body()
+        before_id = data.get("before_id")
+        result = db.reorder_entry(DB_PATH, entry_id, before_id)
+        if result is None:
+            self._send_error(404, "Entry not found")
+            return
+        self._send_json(result)
 
     def _handle_delete_entry(self, entry_id):
         db.delete_entry(DB_PATH, entry_id)

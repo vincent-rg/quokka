@@ -120,6 +120,10 @@ def init_db(db_path):
                          ("Work Item", "", 0))
             conn.execute("INSERT INTO ado_link_types (title, url_template, position) VALUES (?, ?, ?)",
                          ("Pull Request", "", 1))
+        # Migration: add sort_order column if missing
+        entry_cols2 = [r[1] for r in conn.execute("PRAGMA table_info(entries)").fetchall()]
+        if "sort_order" not in entry_cols2:
+            conn.execute("ALTER TABLE entries ADD COLUMN sort_order INTEGER")
         # Migrate existing ado_workitem/ado_pr data to entry_ado_items
         has_ado_items = conn.execute("SELECT COUNT(*) FROM entry_ado_items").fetchone()[0]
         if not has_ado_items:
@@ -143,7 +147,7 @@ def init_db(db_path):
 ENTRY_COLUMNS = [
     "id", "date", "duration", "description", "notes",
     "ado_workitem", "ado_pr", "imputation_account_id",
-    "imputation_duration", "group_id",
+    "imputation_duration", "group_id", "sort_order",
 ]
 
 UNDO_STACK_LIMIT = 50
@@ -403,12 +407,12 @@ def list_entries(db_path, date_from=None, date_to=None):
     with get_connection(db_path) as conn:
         if date_from and date_to:
             rows = conn.execute(
-                _ENTRY_QUERY + " WHERE date >= ? AND date <= ? ORDER BY date DESC, id",
+                _ENTRY_QUERY + " WHERE date >= ? AND date <= ? ORDER BY date DESC, COALESCE(sort_order, id), id",
                 (date_from, date_to),
             ).fetchall()
         else:
             rows = conn.execute(
-                _ENTRY_QUERY + " ORDER BY date DESC, id"
+                _ENTRY_QUERY + " ORDER BY date DESC, COALESCE(sort_order, id), id"
             ).fetchall()
         entries = [dict(r) for r in rows]
         _attach_splits(conn, entries)
@@ -638,6 +642,40 @@ def delete_entry(db_path, entry_id):
 
         _record_undo(conn, "delete_entry", before, after)
         conn.commit()
+
+
+def reorder_entry(db_path, entry_id, before_id):
+    """Move entry to be positioned before before_id within its day, or to the end if before_id is None."""
+    if before_id is not None and before_id == entry_id:
+        return {"ok": True}
+    with get_connection(db_path) as conn:
+        row = conn.execute("SELECT date FROM entries WHERE id = ?", (entry_id,)).fetchone()
+        if not row:
+            return None
+        date = row["date"]
+
+        rows = conn.execute(
+            "SELECT id FROM entries WHERE date = ? ORDER BY COALESCE(sort_order, id), id",
+            (date,),
+        ).fetchall()
+        ids = [r["id"] for r in rows]
+
+        before = _snapshot_entries(conn, ids)
+
+        ids = [i for i in ids if i != entry_id]
+        if before_id is not None and before_id in ids:
+            idx = ids.index(before_id)
+            ids.insert(idx, entry_id)
+        else:
+            ids.append(entry_id)
+
+        for i, eid in enumerate(ids):
+            conn.execute("UPDATE entries SET sort_order = ? WHERE id = ?", (i, eid))
+
+        after = _snapshot_entries(conn, ids)
+        _record_undo(conn, "reorder_entry", before, after)
+        conn.commit()
+        return {"ok": True}
 
 
 def _cleanup_group(conn, group_id):

@@ -5,6 +5,8 @@
     var entries = [];
     var accounts = [];
     var linkTypes = [];
+    var dropBeforeId = null;  // entry id to drop before (null = end of day)
+    var dropIndicatorEl = null; // singleton indicator <tr>
     var DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
     var COL_COUNT = 7; // number of columns in entry tables
     var COL_DEFAULTS = [70, 180, 180, 180, 120, 28, 50];
@@ -343,6 +345,11 @@
         for (var i = 0; i < group.entries.length; i++) {
             tbody.appendChild(makeEntryRow(group.entries[i]));
         }
+        tbody.addEventListener("dragleave", function (ev) {
+            if (!tbody.contains(ev.relatedTarget)) {
+                removeDropIndicator();
+            }
+        });
         table.appendChild(tbody);
         div.appendChild(table);
 
@@ -359,13 +366,15 @@
         div.addEventListener("drop", function (ev) {
             ev.preventDefault();
             div.classList.remove("drag-over");
+            var beforeId = dropBeforeId;
+            removeDropIndicator();
             var raw = ev.dataTransfer.getData("text/plain");
             if (!raw) return;
             var parts = raw.split(":");
-            var entryId = parts[0];
+            var entryId = parseInt(parts[0]);
             var sourceDate = parts[1] || "";
             var sameDay = sourceDate === group.date;
-            showDropMenu(ev.clientX, ev.clientY, entryId, group.date, sameDay);
+            showDropMenu(ev.clientX, ev.clientY, entryId, group.date, sameDay, beforeId);
         });
 
         return div;
@@ -417,20 +426,22 @@
         div.addEventListener("drop", function (ev) {
             ev.preventDefault();
             div.classList.remove("drag-over");
+            var beforeId = dropBeforeId;
+            removeDropIndicator();
             var raw = ev.dataTransfer.getData("text/plain");
             if (!raw) return;
             var parts = raw.split(":");
-            var entryId = parts[0];
+            var entryId = parseInt(parts[0]);
             var sourceDate = parts[1] || "";
             var sameDay = sourceDate === todayStr;
-            showDropMenu(ev.clientX, ev.clientY, entryId, todayStr, sameDay);
+            showDropMenu(ev.clientX, ev.clientY, entryId, todayStr, sameDay, beforeId);
         });
 
         return div;
     }
 
     // --- Drop context menu ---
-    function showDropMenu(x, y, entryId, targetDate, sameDay) {
+    function showDropMenu(x, y, entryId, targetDate, sameDay, beforeId) {
         closeDropMenu();
 
         var menu = document.createElement("div");
@@ -439,15 +450,19 @@
         menu.style.top = y + "px";
 
         var moveBtn = document.createElement("button");
-        moveBtn.textContent = "Move here";
-        if (sameDay) {
-            moveBtn.className = "disabled";
-        } else {
-            moveBtn.onclick = function () {
-                api("POST", "/api/entries/" + entryId, { date: targetDate }).then(loadEntries);
-                closeDropMenu();
-            };
-        }
+        moveBtn.textContent = sameDay ? "Reorder here" : "Move here";
+        moveBtn.onclick = function () {
+            if (sameDay) {
+                api("POST", "/api/entries/" + entryId + "/reorder", { before_id: beforeId }).then(loadEntries);
+            } else {
+                api("POST", "/api/entries/" + entryId, { date: targetDate })
+                    .then(function () {
+                        return api("POST", "/api/entries/" + entryId + "/reorder", { before_id: beforeId });
+                    })
+                    .then(loadEntries);
+            }
+            closeDropMenu();
+        };
         menu.appendChild(moveBtn);
 
         var dupBtn = document.createElement("button");
@@ -500,6 +515,32 @@
         document.removeEventListener("mousedown", onOutsideClick);
     }
 
+    // --- Drag-drop indicator ---
+    function getDropIndicator() {
+        if (!dropIndicatorEl) {
+            dropIndicatorEl = document.createElement("tr");
+            dropIndicatorEl.className = "drop-indicator";
+            var td = document.createElement("td");
+            td.colSpan = COL_COUNT;
+            var line = document.createElement("div");
+            line.className = "drop-line";
+            td.appendChild(line);
+            dropIndicatorEl.appendChild(td);
+            // Prevent "forbidden" cursor when hovering over the thin indicator row
+            dropIndicatorEl.addEventListener("dragover", function (ev) {
+                ev.preventDefault();
+            });
+        }
+        return dropIndicatorEl;
+    }
+
+    function removeDropIndicator() {
+        if (dropIndicatorEl && dropIndicatorEl.parentNode) {
+            dropIndicatorEl.parentNode.removeChild(dropIndicatorEl);
+        }
+        dropBeforeId = null;
+    }
+
     function makeEntryRow(entry) {
         var tr = document.createElement("tr");
         tr.dataset.id = entry.id;
@@ -518,9 +559,31 @@
         });
         tr.addEventListener("dragend", function () {
             tr.classList.remove("dragging");
-            // Remove all drag-over highlights
+            removeDropIndicator();
             var groups = document.querySelectorAll(".day-group.drag-over");
             for (var i = 0; i < groups.length; i++) groups[i].classList.remove("drag-over");
+        });
+        tr.addEventListener("dragover", function (ev) {
+            if (tr.classList.contains("dragging")) return;
+            ev.preventDefault();
+            var rect = tr.getBoundingClientRect();
+            var midY = rect.top + rect.height / 2;
+            var indicator = getDropIndicator();
+            var tbody = tr.parentNode;
+            if (!tbody) return;
+            if (ev.clientY < midY) {
+                tbody.insertBefore(indicator, tr);
+                indicator.className = "drop-indicator drop-indicator-above";
+                dropBeforeId = entry.id;
+            } else {
+                var next = tr.nextElementSibling;
+                while (next && next.classList.contains("drop-indicator")) {
+                    next = next.nextElementSibling;
+                }
+                tbody.insertBefore(indicator, next);
+                indicator.className = "drop-indicator drop-indicator-below";
+                dropBeforeId = next ? parseInt(next.dataset.id) : null;
+            }
         });
 
         // Duration (warning icon for 0:00)

@@ -147,6 +147,31 @@ main { padding: 0 12px 40px; width: fit-content; min-width: calc(100% - 24px); }
 .day-group tr:last-child td { border-bottom: none; }
 .day-group tr:hover td { background: #f0f0f0; }
 .day-group tr.dragging { opacity: 0.4; }
+.drop-indicator > td {
+    padding: 0 !important;
+    height: 4px;
+    border: none !important;
+    background: transparent !important;
+}
+.drop-line {
+    height: 3px;
+    background: var(--accent);
+    border-radius: 2px;
+}
+.drop-indicator-above .drop-line {
+    animation: drop-bounce-up 0.4s ease-in-out infinite alternate;
+}
+.drop-indicator-below .drop-line {
+    animation: drop-bounce-down 0.4s ease-in-out infinite alternate;
+}
+@keyframes drop-bounce-up {
+    from { transform: translateY(0); }
+    to { transform: translateY(-2px); }
+}
+@keyframes drop-bounce-down {
+    from { transform: translateY(0); }
+    to { transform: translateY(2px); }
+}
 .day-group td .zero-warn { color: #c77800; }
 .day-group td .date-warn { color: #c77800; margin-right: 4px; cursor: default; }
 

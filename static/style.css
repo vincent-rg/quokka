@@ -69,6 +69,16 @@ header h1 { font-size: 16px; font-weight: 600; color: var(--text); }
     background: var(--bg);
     cursor: pointer;
 }
+#search-entries {
+    border: 1px solid var(--border);
+    padding: 3px 6px;
+    border-radius: 3px;
+    font-size: 12px;
+    font-family: inherit;
+    background: var(--bg);
+    width: 140px;
+}
+#search-entries:focus { outline: none; border-color: var(--accent); }
 .toolbar-group { display: flex; align-items: center; gap: 4px; }
 .toolbar-group.hidden { display: none; }
 .toolbar-sep {

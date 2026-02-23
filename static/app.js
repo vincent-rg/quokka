@@ -5,6 +5,7 @@
     var entries = [];
     var accounts = [];
     var linkTypes = [];
+    var searchTerm = "";
     var dropBeforeId = null;  // entry id to drop before (null = end of day)
     var dropIndicatorEl = null; // singleton indicator <tr>
     var DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -222,12 +223,25 @@
         return title.slice(0, 4);
     }
 
+    // --- Search filter ---
+    function matchesSearch(entry, lower) {
+        if (!lower) return true;
+        if ((entry.description || "").toLowerCase().indexOf(lower) >= 0) return true;
+        if ((entry.notes || "").toLowerCase().indexOf(lower) >= 0) return true;
+        var adoItems = entry.ado_items || [];
+        for (var ai = 0; ai < adoItems.length; ai++) {
+            if ((adoItems[ai].value || "").toLowerCase().indexOf(lower) >= 0) return true;
+        }
+        return false;
+    }
+
     // --- Group entries by date ---
-    function groupByDate() {
+    function groupByDate(arr) {
+        arr = arr || entries;
         var groups = [];
         var map = {};
-        for (var i = 0; i < entries.length; i++) {
-            var e = entries[i];
+        for (var i = 0; i < arr.length; i++) {
+            var e = arr[i];
             if (!map[e.date]) {
                 map[e.date] = { date: e.date, entries: [] };
                 groups.push(map[e.date]);
@@ -241,7 +255,9 @@
     function renderDays() {
         var container = document.getElementById("days-container");
         container.innerHTML = "";
-        var groups = groupByDate();
+        var lower = searchTerm.toLowerCase();
+        var filtered = lower ? entries.filter(function (e) { return matchesSearch(e, lower); }) : entries;
+        var groups = groupByDate(filtered);
         var grandTotal = 0;
 
         var todayStr = fmtDate(new Date());
@@ -257,8 +273,8 @@
             container.appendChild(makeDayGroup(group, dayTotal));
         }
 
-        // Empty placeholder for today if no entries exist
-        if (!hasTodayGroup) {
+        // Empty placeholder for today if no entries exist (skip when filtering)
+        if (!hasTodayGroup && !lower) {
             container.insertBefore(makeTodayPlaceholder(todayStr), container.firstChild);
         }
 
@@ -1224,6 +1240,10 @@
 
     // --- View switching ---
     function switchView(view) {
+        if (view !== "entries") {
+            searchTerm = "";
+            document.getElementById("search-entries").value = "";
+        }
         document.getElementById("view-entries").classList.toggle("hidden", view !== "entries");
         document.getElementById("view-accounts").classList.toggle("hidden", view !== "accounts");
         document.getElementById("view-imputations").classList.toggle("hidden", view !== "imputations");
@@ -2112,6 +2132,13 @@
     document.getElementById("grouping-filter").oninput = function () {
         renderGroupingSuggestions(this.value);
     };
+    document.getElementById("search-entries").oninput = function () {
+        searchTerm = this.value;
+        renderDays();
+    };
+    document.getElementById("search-entries").onkeydown = function (ev) {
+        if (ev.key === "Escape") { this.value = ""; searchTerm = ""; renderDays(); this.blur(); }
+    };
 
     // Close notes popup on outside click
     document.addEventListener("click", function (ev) {
@@ -2186,6 +2213,15 @@
 
     document.addEventListener("keydown", function (ev) {
         var tag = ev.target.tagName;
+        if ((ev.ctrlKey || ev.metaKey) && ev.key === "f") {
+            var searchEl = document.getElementById("search-entries");
+            if (!searchEl.closest(".toolbar-group").classList.contains("hidden")) {
+                ev.preventDefault();
+                searchEl.focus();
+                searchEl.select();
+                return;
+            }
+        }
         if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
 
         if ((ev.ctrlKey || ev.metaKey) && ev.key === "z" && !ev.shiftKey) {

@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """Quokka - Work time tracker server."""
 
+import datetime
 import glob
 import json
 import logging
 import os
 import re
 import shutil
+import threading
+import time
 from datetime import date
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
@@ -352,6 +355,16 @@ def backup_db(db_path, max_backups=10):
         log.info("Removed old backup: %s", old)
 
 
+def _backup_scheduler(db_path):
+    while True:
+        now = datetime.datetime.now()
+        next_run = now.replace(hour=2, minute=0, second=0, microsecond=0)
+        if next_run <= now:
+            next_run += datetime.timedelta(days=1)
+        time.sleep((next_run - now).total_seconds())
+        backup_db(db_path)
+
+
 def main():
     log_format = "%(asctime)s [%(levelname)s] %(message)s"
     log_datefmt = "%Y-%m-%d %H:%M:%S"
@@ -367,6 +380,8 @@ def main():
     file_handler.setFormatter(logging.Formatter(log_format, datefmt=log_datefmt))
     logging.getLogger().addHandler(file_handler)
     backup_db(DB_PATH)
+    t = threading.Thread(target=_backup_scheduler, args=(DB_PATH,), daemon=True)
+    t.start()
     log.info("Initializing database at %s", DB_PATH)
     db.init_db(DB_PATH)
     port = CONFIG.get("port", 8080)

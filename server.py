@@ -356,13 +356,21 @@ def backup_db(db_path, max_backups=10):
 
 
 def _backup_scheduler(db_path):
+    log.info("Backup scheduler thread started")
     while True:
         now = datetime.datetime.now()
         next_run = now.replace(hour=2, minute=0, second=0, microsecond=0)
         if next_run <= now:
             next_run += datetime.timedelta(days=1)
-        time.sleep((next_run - now).total_seconds())
-        backup_db(db_path)
+        wait_seconds = (next_run - now).total_seconds()
+        hours, remainder = divmod(int(wait_seconds), 3600)
+        minutes = remainder // 60
+        log.info("Next DB backup at %s (sleeping %dh %02dm)", next_run.strftime("%Y-%m-%d %H:%M:%S"), hours, minutes)
+        time.sleep(wait_seconds)
+        try:
+            backup_db(db_path)
+        except Exception:
+            log.exception("DB backup failed")
 
 
 def main():

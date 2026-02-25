@@ -1989,7 +1989,26 @@
 
                     var tr = document.createElement("tr");
                     tr.className = "imp-entry";
-                    tr.appendChild(document.createElement("td"));
+                    // First cell: copy button (left of row)
+                    var firstTd = document.createElement("td");
+                    firstTd.className = "imp-copy-cell";
+                    (function(number, td) {
+                        var copyBtn = document.createElement("button");
+                        copyBtn.className = "imp-copy-btn";
+                        copyBtn.title = "Copy account number: " + number;
+                        copyBtn.textContent = "\u29c9"; // ⧉
+                        copyBtn.addEventListener("click", function(e) {
+                            e.stopPropagation();
+                            navigator.clipboard.writeText(number);
+                            var bubble = document.createElement("span");
+                            bubble.className = "imp-copy-bubble";
+                            bubble.textContent = "Copied";
+                            td.appendChild(bubble);
+                            setTimeout(function() { bubble.remove(); }, 1000);
+                        });
+                        td.appendChild(copyBtn);
+                    }(info.number, firstTd));
+                    tr.appendChild(firstTd);
                     // Account
                     var acctTd = document.createElement("td");
                     acctTd.textContent = info.label;

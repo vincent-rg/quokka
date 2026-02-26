@@ -578,14 +578,6 @@ td select { padding: 1px 2px; }
     cursor: pointer;
 }
 .split-chip:hover { border-color: var(--accent); }
-.split-chip-rm {
-    cursor: pointer;
-    color: var(--muted);
-    font-size: 13px;
-    line-height: 1;
-    margin-left: 1px;
-}
-.split-chip-rm:hover { color: var(--danger); }
 .split-add {
     display: inline-flex;
     align-items: center;
@@ -619,6 +611,18 @@ td select { padding: 1px 2px; }
     background: var(--surface);
     max-width: 50vw;
 }
+.adder-rm {
+    background: none;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: 3px;
+    display: flex;
+    align-items: center;
+    line-height: 1;
+}
+.adder-rm:hover { color: var(--danger); background: #fee; }
 
 /* Imputation report */
 #view-imputations { padding-top: 8px; }
@@ -798,14 +802,6 @@ td select { padding: 1px 2px; }
     cursor: pointer;
 }
 .ado-chip:hover { border-color: #6a9fd8; }
-.ado-chip-rm {
-    cursor: pointer;
-    color: var(--muted);
-    font-size: 13px;
-    line-height: 1;
-    margin-left: 1px;
-}
-.ado-chip-rm:hover { color: var(--danger); }
 .ado-add {
     display: inline-flex;
     align-items: center;

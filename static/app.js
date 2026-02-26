@@ -963,20 +963,10 @@
                 chip.title = warn || acctLabel(s);
                 var label = (s.account_number || "?") + ": " + fmtDuration(s.duration);
                 chip.appendChild(document.createTextNode(label));
-                var rm = document.createElement("span");
-                rm.className = "split-chip-rm";
-                rm.textContent = "\u00d7";
-                rm.onclick = function (ev) {
-                    ev.stopPropagation();
-                    var updated = splits.filter(function (_, j) { return j !== idx; })
-                        .map(function (s) { return { account_id: s.account_id, duration: s.duration }; });
-                    saveSplits(entry, updated);
-                };
                 chip.onclick = function (ev) {
                     ev.stopPropagation();
                     openSplitAdder(td, entry, idx);
                 };
-                chip.appendChild(rm);
                 td.appendChild(chip);
             })(i);
         }
@@ -1037,11 +1027,26 @@
         }
         adder.appendChild(durSel);
 
+        var rmBtn = document.createElement("button");
+        rmBtn.className = "adder-rm";
+        rmBtn.title = "Delete";
+        rmBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h12M5.3 4V2.7a1.3 1.3 0 011.3-1.3h2.8a1.3 1.3 0 011.3 1.3V4M13 4v9.3a1.3 1.3 0 01-1.3 1.3H4.3A1.3 1.3 0 013 13.3V4"/></svg>';
+        rmBtn.onclick = function (ev) {
+            ev.stopPropagation();
+            var updated = splits.filter(function (_, j) { return j !== editIdx; })
+                .map(function (s) { return { account_id: s.account_id, duration: s.duration }; });
+            adder.remove();
+            document.removeEventListener("mousedown", closeAdderOutside);
+            saveSplits(entry, updated);
+        };
+        adder.appendChild(rmBtn);
+
         if (editing) {
             acctSel.value = String(editing.account_id);
             durSel.value = String(editing.duration);
         } else {
             durSel.style.display = "none";
+            rmBtn.style.display = "none";
         }
 
         function commitIfReady() {
@@ -1126,15 +1131,6 @@
                     chip.title += "\nCtrl+click to open link";
                 }
                 chip.appendChild(document.createTextNode(label));
-                var rm = document.createElement("span");
-                rm.className = "ado-chip-rm";
-                rm.textContent = "\u00d7";
-                rm.onclick = function (ev) {
-                    ev.stopPropagation();
-                    var updated = items.filter(function (_, j) { return j !== idx; })
-                        .map(function (a) { return { link_type_id: a.link_type_id, value: a.value }; });
-                    saveAdoItems(entry, updated);
-                };
                 chip.onclick = function (ev) {
                     ev.stopPropagation();
                     if ((ev.ctrlKey || ev.metaKey) && a.link_type_url_template) {
@@ -1144,7 +1140,6 @@
                     }
                     openAdoItemAdder(td, entry, idx);
                 };
-                chip.appendChild(rm);
                 td.appendChild(chip);
             })(i);
         }
@@ -1190,11 +1185,26 @@
         valInput.placeholder = "value";
         adder.appendChild(valInput);
 
+        var rmBtn = document.createElement("button");
+        rmBtn.className = "adder-rm";
+        rmBtn.title = "Delete";
+        rmBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h12M5.3 4V2.7a1.3 1.3 0 011.3-1.3h2.8a1.3 1.3 0 011.3 1.3V4M13 4v9.3a1.3 1.3 0 01-1.3 1.3H4.3A1.3 1.3 0 013 13.3V4"/></svg>';
+        rmBtn.onclick = function (ev) {
+            ev.stopPropagation();
+            var updated = items.filter(function (_, j) { return j !== editIdx; })
+                .map(function (a) { return { link_type_id: a.link_type_id, value: a.value }; });
+            adder.remove();
+            document.removeEventListener("mousedown", closeAdderOutside);
+            saveAdoItems(entry, updated);
+        };
+        adder.appendChild(rmBtn);
+
         if (editing) {
             typeSel.value = String(editing.link_type_id);
             valInput.value = editing.value;
         } else {
             valInput.style.display = "none";
+            rmBtn.style.display = "none";
         }
 
         function commitIfReady() {
@@ -1238,12 +1248,10 @@
 
         valInput.onblur = function () {
             setTimeout(function () {
-                if (!adder.contains(document.activeElement)) {
+                if (adder.parentNode && !adder.contains(document.activeElement)) {
                     commitIfReady();
-                    if (adder.parentNode) {
-                        adder.remove();
-                        document.removeEventListener("mousedown", closeAdderOutside);
-                    }
+                    adder.remove();
+                    document.removeEventListener("mousedown", closeAdderOutside);
                 }
             }, 100);
         };

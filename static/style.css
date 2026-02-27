@@ -287,6 +287,7 @@ td select { padding: 1px 2px; }
 }
 .btn-row:hover { color: var(--text); background: rgba(0,0,0,0.05); }
 .btn-row.btn-delete:hover { color: var(--danger); background: #fee; }
+.btn-kebab { font-size: 15px; padding: 0 4px; }
 
 /* Drop context menu */
 .drop-menu {
@@ -317,6 +318,8 @@ td select { padding: 1px 2px; }
     cursor: default;
 }
 .drop-menu button.disabled:hover { background: none; }
+.drop-menu button.danger { color: var(--danger); }
+.drop-menu button.danger:hover { background: #fee; color: var(--danger); }
 .drop-menu hr {
     border: none;
     border-top: 1px solid var(--border);

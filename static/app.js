@@ -102,6 +102,19 @@
         return Math.abs(hash) % GROUP_COLORS.length;
     }
 
+    // Per-group color overrides: maps group_id -> offset added to base color index
+    var groupColorOverrides = (function () {
+        try { return JSON.parse(localStorage.getItem("groupColorOverrides")) || {}; } catch (e) { return {}; }
+    })();
+    function saveGroupColorOverrides() {
+        localStorage.setItem("groupColorOverrides", JSON.stringify(groupColorOverrides));
+    }
+    function resolvedGroupColorIndex(groupId) {
+        var base = groupColorIndex(groupId);
+        var offset = groupColorOverrides[groupId] || 0;
+        return (base + offset) % GROUP_COLORS.length;
+    }
+
     // --- Helpers ---
     function fmtDate(d) {
         var y = d.getFullYear();
@@ -624,6 +637,59 @@
         document.removeEventListener("mousedown", onOutsideClick);
     }
 
+    function openKebabMenu(btn, entry, actTd) {
+        closeDropMenu();
+        var menu = document.createElement("div");
+        menu.className = "drop-menu";
+        var rect = btn.getBoundingClientRect();
+        menu.style.top = (rect.bottom + 2) + "px";
+        menu.style.right = (window.innerWidth - rect.right) + "px";
+
+        var dateItem = document.createElement("button");
+        dateItem.textContent = "\uD83D\uDCC5 Change date";
+        dateItem.onclick = function () {
+            closeDropMenu();
+            openDatePicker(actTd, entry);
+        };
+        menu.appendChild(dateItem);
+
+        if (entry.group_id) {
+            var colorItem = document.createElement("button");
+            colorItem.textContent = "\uD83C\uDFA8 Change link color";
+            colorItem.onclick = function () {
+                closeDropMenu();
+                var offset = ((groupColorOverrides[entry.group_id] || 0) + 1) % GROUP_COLORS.length;
+                groupColorOverrides[entry.group_id] = offset;
+                saveGroupColorOverrides();
+                var ci = resolvedGroupColorIndex(entry.group_id);
+                var rows = document.querySelectorAll('tr[data-group="' + entry.group_id + '"]');
+                for (var i = 0; i < rows.length; i++) {
+                    rows[i].style.borderLeft = "3px solid " + GROUP_COLORS[ci];
+                }
+            };
+            menu.appendChild(colorItem);
+        }
+
+        var hr = document.createElement("hr");
+        menu.appendChild(hr);
+
+        var delItem = document.createElement("button");
+        delItem.className = "danger";
+        delItem.textContent = "Delete";
+        delItem.onclick = function () {
+            closeDropMenu();
+            if (confirm("Delete this entry?")) {
+                api("POST", "/api/entries/" + entry.id + "/delete").then(loadEntries);
+            }
+        };
+        menu.appendChild(delItem);
+
+        document.body.appendChild(menu);
+        setTimeout(function () {
+            document.addEventListener("mousedown", onOutsideClick);
+        }, 0);
+    }
+
     // --- Drag-drop indicator ---
     function getDropIndicator() {
         if (!dropIndicatorEl) {
@@ -656,7 +722,7 @@
         tr.draggable = true;
         if (entry.group_id) {
             tr.dataset.group = entry.group_id;
-            var ci = groupColorIndex(entry.group_id);
+            var ci = resolvedGroupColorIndex(entry.group_id);
             tr.style.borderLeft = "3px solid " + GROUP_COLORS[ci];
         }
 
@@ -744,28 +810,16 @@
         var actions = document.createElement("span");
         actions.className = "row-actions";
 
-        // Date change
-        var dateBtn = document.createElement("button");
-        dateBtn.className = "btn-row";
-        dateBtn.textContent = "\u{1F4C5}";
-        dateBtn.title = "Change date";
-        dateBtn.onclick = function (ev) {
+        // Kebab menu button
+        var kebabBtn = document.createElement("button");
+        kebabBtn.className = "btn-row btn-kebab";
+        kebabBtn.textContent = "\u22EE";
+        kebabBtn.title = "Actions";
+        kebabBtn.onclick = function (ev) {
             ev.stopPropagation();
-            openDatePicker(actTd, entry);
+            openKebabMenu(kebabBtn, entry, actTd);
         };
-        actions.appendChild(dateBtn);
-
-        // Delete (trash can)
-        var delBtn = document.createElement("button");
-        delBtn.className = "btn-row btn-delete";
-        delBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h12M5.3 4V2.7a1.3 1.3 0 011.3-1.3h2.8a1.3 1.3 0 011.3 1.3V4M13 4v9.3a1.3 1.3 0 01-1.3 1.3H4.3A1.3 1.3 0 013 13.3V4"/></svg>';
-        delBtn.title = "Delete";
-        delBtn.onclick = function () {
-            if (confirm("Delete this entry?")) {
-                api("POST", "/api/entries/" + entry.id + "/delete").then(loadEntries);
-            }
-        };
-        actions.appendChild(delBtn);
+        actions.appendChild(kebabBtn);
 
         actTd.appendChild(actions);
         tr.appendChild(actTd);
@@ -1641,7 +1695,7 @@
         var tr = ev.target.closest("tr[data-group]");
         if (!tr) return;
         var gid = tr.dataset.group;
-        var lightColor = GROUP_COLORS_LIGHT[groupColorIndex(gid)];
+        var lightColor = GROUP_COLORS_LIGHT[resolvedGroupColorIndex(gid)];
         var rows = document.querySelectorAll('tr[data-group="' + gid + '"]');
         for (var i = 0; i < rows.length; i++) {
             var tds = rows[i].querySelectorAll("td");

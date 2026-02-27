@@ -451,8 +451,8 @@
             var th = document.createElement("th");
             th.className = cols[c][0];
             th.textContent = cols[c][1];
-            // Resize handle (not on last column)
-            if (c < cols.length - 1) {
+            // Resize handle
+            if (c < cols.length) {
                 var handle = document.createElement("div");
                 handle.className = "col-resize";
                 handle.dataset.colIndex = c;

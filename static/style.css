@@ -185,7 +185,7 @@ main { padding: 0 12px 40px; width: fit-content; min-width: calc(100% - 24px); }
     border-right: 1px solid var(--border);
     color: var(--muted);
 }
-.day-group th:last-child { border-right: none; }
+
 .day-group td {
     padding: 2px 4px;
     border-bottom: 1px solid var(--border);
@@ -193,7 +193,7 @@ main { padding: 0 12px 40px; width: fit-content; min-width: calc(100% - 24px); }
     vertical-align: middle;
     height: 28px;
 }
-.day-group td:last-child { border-right: none; }
+
 .day-group tr:last-child td { border-bottom: none; }
 .day-group tr:hover td { background: #f0f0f0; }
 .day-group tr.dragging { opacity: 0.4; }

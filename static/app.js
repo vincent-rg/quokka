@@ -830,22 +830,24 @@
 
     function openDatePicker(td, entry) {
         // Remove any existing picker
-        var existing = td.querySelector("input[type=date]");
-        if (existing) return;
+        var existing = document.getElementById("floating-date-picker");
+        if (existing) existing.remove();
         var input = document.createElement("input");
         input.type = "date";
+        input.id = "floating-date-picker";
         input.value = entry.date;
-        input.style.position = "absolute";
-        input.style.zIndex = "10";
-        td.style.position = "relative";
-        td.appendChild(input);
+        input.style.position = "fixed";
+        input.style.zIndex = "1000";
+        var rect = td.getBoundingClientRect();
+        input.style.top = rect.top + "px";
+        input.style.right = (window.innerWidth - rect.right) + "px";
+        document.body.appendChild(input);
         input.focus();
 
         function done() {
+            input.remove();
             if (input.value && input.value !== entry.date) {
                 api("POST", "/api/entries/" + entry.id, { date: input.value }).then(loadEntries);
-            } else {
-                input.remove();
             }
         }
         input.onblur = done;

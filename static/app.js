@@ -783,7 +783,7 @@
         impTd.appendChild(impWrap);
         tr.appendChild(impTd);
         // Notes
-        addCell(tr, entry, "notes", entry.notes ? "\u270E " + truncate(entry.notes, 15) : "", "notes");
+        addCell(tr, entry, "notes", entry.notes ? "\u270E " + entry.notes : "", "notes");
         // Link
         var linkTd = document.createElement("td");
         var linkBtn = document.createElement("button");

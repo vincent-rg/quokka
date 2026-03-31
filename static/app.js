@@ -1547,6 +1547,8 @@
         for (var t = 0; t < tables.length; t++) tables[t].style.width = w;
         var headers = document.querySelectorAll(".day-group .day-header");
         for (var h = 0; h < headers.length; h++) headers[h].style.minWidth = w;
+        var placeholders = document.querySelectorAll(".day-group.empty-placeholder");
+        for (var p = 0; p < placeholders.length; p++) placeholders[p].style.width = w;
         var allCols = document.querySelectorAll(".day-group colgroup col");
         for (var i = 0; i < allCols.length; i++) {
             allCols[i].style.width = colWidths[i % COL_COUNT] + "px";

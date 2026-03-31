@@ -506,6 +506,7 @@
         var div = document.createElement("div");
         div.className = "day-group empty-placeholder";
         div.dataset.date = todayStr;
+        div.style.width = totalColWidth() + "px";
 
         var hdr = document.createElement("div");
         hdr.className = "day-header";

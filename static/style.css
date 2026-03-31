@@ -156,7 +156,7 @@ main { padding: 0 12px 40px; width: fit-content; min-width: calc(100% - 24px); }
 }
 .day-header .day-date { color: var(--text); }
 .day-header .day-right { display: flex; align-items: center; gap: 10px; }
-.day-header .day-total { color: var(--muted); font-weight: 400; }
+.day-header .day-total { color: var(--muted); font-weight: 600; }
 .day-header .btn-add-day {
     background: none;
     border: none;

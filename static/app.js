@@ -654,6 +654,26 @@
         };
         menu.appendChild(dateItem);
 
+        var dupDateItem = document.createElement("button");
+        dupDateItem.textContent = "\uD83D\uDCCB Duplicate to date\u2026";
+        dupDateItem.onclick = function () {
+            closeDropMenu();
+            openDatePicker(actTd, entry, function (date) {
+                api("POST", "/api/entries/" + entry.id + "/duplicate", { date: date }).then(loadEntries);
+            });
+        };
+        menu.appendChild(dupDateItem);
+
+        var dupLinkDateItem = document.createElement("button");
+        dupLinkDateItem.textContent = "\uD83D\uDD17 Duplicate & link to date\u2026";
+        dupLinkDateItem.onclick = function () {
+            closeDropMenu();
+            openDatePicker(actTd, entry, function (date) {
+                api("POST", "/api/entries/" + entry.id + "/duplicate", { date: date, link: true }).then(loadEntries);
+            });
+        };
+        menu.appendChild(dupLinkDateItem);
+
         if (entry.group_id) {
             var colorItem = document.createElement("button");
             colorItem.textContent = "\uD83C\uDFA8 Change link color";
@@ -828,14 +848,14 @@
         return tr;
     }
 
-    function openDatePicker(td, entry) {
+    function openDatePicker(td, entry, onPick) {
         // Remove any existing picker
         var existing = document.getElementById("floating-date-picker");
         if (existing) existing.remove();
         var input = document.createElement("input");
         input.type = "date";
         input.id = "floating-date-picker";
-        input.value = entry.date;
+        input.value = onPick ? fmtDate(new Date()) : entry.date;
         input.style.position = "fixed";
         input.style.zIndex = "1000";
         var rect = td.getBoundingClientRect();
@@ -844,16 +864,21 @@
         document.body.appendChild(input);
         input.focus();
 
+        var cancelled = false;
         function done() {
             input.remove();
-            if (input.value && input.value !== entry.date) {
+            if (cancelled) return;
+            if (!input.value) return;
+            if (onPick) {
+                onPick(input.value);
+            } else if (input.value !== entry.date) {
                 api("POST", "/api/entries/" + entry.id, { date: input.value }).then(loadEntries);
             }
         }
         input.onblur = done;
         input.onkeydown = function (ev) {
             if (ev.key === "Enter") { ev.preventDefault(); input.blur(); }
-            if (ev.key === "Escape") { input.remove(); }
+            if (ev.key === "Escape") { cancelled = true; input.remove(); }
         };
     }
 

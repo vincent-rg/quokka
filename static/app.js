@@ -142,12 +142,21 @@
 
     function durationOptions() {
         var opts = [];
-        for (var m = 15; m <= 720; m += 15) {
+        for (var m = 15; m < 90; m += 15) {
             opts.push({ value: m, label: fmtDuration(m) });
         }
+
+        for (var m = 90; m < 480; m += 30) {
+            opts.push({ value: m, label: fmtDuration(m) });
+        }
+
+        for (var m = 480; m <= 720; m += 60) {
+            opts.push({ value: m, label: fmtDuration(m) });
+        }
+
         return opts;
     }
-
+    
     function acctLabel(a) {
         var parts = [a.number || a.account_number];
         if (a.project || a.account_project) parts.push(a.project || a.account_project);

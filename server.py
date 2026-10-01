@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """Quokka - Work time tracker server."""
 
+import time
+
+_PROCESS_T0 = time.monotonic()
+
 import datetime
 import glob
 import json
@@ -8,13 +12,17 @@ import logging
 import os
 import re
 import shutil
+import socket
+import socketserver
+import sys
 import threading
-import time
 from datetime import date
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
 import db
+
+_IMPORTS_DONE = time.monotonic()
 
 log = logging.getLogger("quokka")
 
@@ -42,11 +50,49 @@ CONFIG = load_config()
 DB_PATH = os.path.join(BASE_DIR, CONFIG.get("database", "quokka.db"))
 
 
+def _since_start():
+    return time.monotonic() - _PROCESS_T0
+
+
+class QuokkaHTTPServer(HTTPServer):
+    """HTTPServer with startup timing logs for each socket setup phase."""
+
+    def server_bind(self):
+        # HTTPServer.server_bind does a plain bind, then socket.getfqdn(host),
+        # which can block on DNS (notably on Windows). The socket is not
+        # listening yet, so client connections are refused meanwhile.
+        t = time.monotonic()
+        socketserver.TCPServer.server_bind(self)
+        log.info("Startup: socket bound to %s:%d in %.3fs (t+%.3fs)",
+                 *self.server_address[:2], time.monotonic() - t, _since_start())
+        t = time.monotonic()
+        host, port = self.server_address[:2]
+        self.server_name = socket.getfqdn(host)
+        self.server_port = port
+        log.info("Startup: getfqdn(%s) -> %r in %.3fs (t+%.3fs)",
+                 host, self.server_name, time.monotonic() - t, _since_start())
+
+    def server_activate(self):
+        t = time.monotonic()
+        super().server_activate()
+        log.info("Startup: socket listening in %.3fs (t+%.3fs)",
+                 time.monotonic() - t, _since_start())
+
+
 class QuokkaHandler(BaseHTTPRequestHandler):
     """HTTP request handler for the Quokka app."""
 
+    _first_request_logged = False
+
     def log_message(self, format, *args):
         log.info(format % args)
+
+    def handle_one_request(self):
+        if not QuokkaHandler._first_request_logged:
+            QuokkaHandler._first_request_logged = True
+            log.info("Startup: first connection from %s accepted (t+%.3fs)",
+                     self.client_address[0], _since_start())
+        super().handle_one_request()
 
     def _send_json(self, data, status=200):
         body = json.dumps(data).encode("utf-8")
@@ -387,13 +433,21 @@ def main():
     file_handler.setLevel(logging.INFO)
     file_handler.setFormatter(logging.Formatter(log_format, datefmt=log_datefmt))
     logging.getLogger().addHandler(file_handler)
+    log.info("Startup: PID %d, Python %s, imports took %.3fs, logging ready (t+%.3fs)",
+             os.getpid(), sys.version.split()[0], _IMPORTS_DONE - _PROCESS_T0, _since_start())
+    t0 = time.monotonic()
     backup_db(DB_PATH)
+    log.info("Startup: backup check done in %.3fs (t+%.3fs)", time.monotonic() - t0, _since_start())
     t = threading.Thread(target=_backup_scheduler, args=(DB_PATH,), daemon=True)
     t.start()
     log.info("Initializing database at %s", DB_PATH)
+    t0 = time.monotonic()
     db.init_db(DB_PATH)
+    log.info("Startup: database initialized in %.3fs (t+%.3fs)", time.monotonic() - t0, _since_start())
     port = CONFIG.get("port", 8080)
-    server = HTTPServer(("127.0.0.1", port), QuokkaHandler)
+    t0 = time.monotonic()
+    server = QuokkaHTTPServer(("127.0.0.1", port), QuokkaHandler)
+    log.info("Startup: HTTP server created in %.3fs (t+%.3fs)", time.monotonic() - t0, _since_start())
     log.info("Quokka running on http://localhost:%d", port)
     try:
         server.serve_forever()

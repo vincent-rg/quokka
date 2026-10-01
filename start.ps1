@@ -44,7 +44,35 @@ if (-not $alreadyRunning) {
         -WorkingDirectory $scriptDir -WindowStyle Hidden -PassThru
     $proc.Id | Out-File $pidFile -NoNewline
     Write-Host "Started Quokka server (PID $($proc.Id))"
-    Start-Sleep -Seconds 1
+
+    # Wait until the server accepts connections (up to 20s)
+    $timeoutMs = 20000
+    $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    $ready = $false
+    while ($stopwatch.ElapsedMilliseconds -lt $timeoutMs) {
+        if ($proc.HasExited) {
+            Write-Host "Quokka server exited early (code $($proc.ExitCode)), see quokka.log"
+            break
+        }
+        $client = New-Object System.Net.Sockets.TcpClient
+        try {
+            $connect = $client.ConnectAsync("127.0.0.1", $port)
+            if ($connect.Wait(500) -and $client.Connected) {
+                $ready = $true
+                break
+            }
+        } catch {
+            # Connection refused: server not listening yet
+        } finally {
+            $client.Close()
+        }
+        Start-Sleep -Milliseconds 100
+    }
+    if ($ready) {
+        Write-Host "Quokka server ready after $($stopwatch.ElapsedMilliseconds) ms"
+    } else {
+        Write-Host "Quokka server not ready after $($stopwatch.ElapsedMilliseconds) ms, opening anyway"
+    }
 }
 
 # Try to launch as installed Edge PWA via msedge_proxy.exe

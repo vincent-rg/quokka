@@ -21,7 +21,8 @@ Personal app to track daily work entries with imputation (time allocation to acc
 | `static/quokka.svg` | Logo |
 | `config.json` | Port and DB path (gitignored, `config.json.default` is tracked) |
 | `specs` | Original requirements doc (gitignored) |
-| `start.ps1` / `stop.ps1` | PowerShell scripts to start/stop the server |
+| `start.ps1` / `stop.ps1` | PowerShell scripts to start/stop the server (`start.ps1 -NoBrowser` starts the server only) |
+| `install.ps1` / `uninstall.ps1` | Register/remove a per-user logon scheduled task that runs `start.ps1 -NoBrowser` |
 
 ## Architecture
 

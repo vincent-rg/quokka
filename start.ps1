@@ -2,7 +2,8 @@
 param(
     [string]$AppId = "",
     [string]$LaunchSource = "app_launcher",
-    [string]$ProfileDirectory = "Default"
+    [string]$ProfileDirectory = "Default",
+    [switch]$NoBrowser
 )
 
 $ErrorActionPreference = "Stop"
@@ -74,6 +75,8 @@ if (-not $alreadyRunning) {
         Write-Host "Quokka server not ready after $($stopwatch.ElapsedMilliseconds) ms, opening anyway"
     }
 }
+
+if ($NoBrowser) { exit }
 
 # Try to launch as installed Edge PWA via msedge_proxy.exe
 if ($AppId) {
